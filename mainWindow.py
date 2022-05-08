@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 
 from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtGui import QIcon, QTextCursor
+from PyQt6.QtGui import QIcon, QTextCursor, QAction, QKeySequence
 from PyQt6.QtWidgets import QApplication, QMainWindow, QToolBar, QStatusBar, QVBoxLayout, QWidget, QTextEdit, \
     QPushButton, QStackedLayout, QLabel
 
@@ -11,15 +11,32 @@ class MainWindow(QMainWindow):
 
     # default file to save when the application is closed
     WORKSPACE_FILE = 'recordings.txt'
+    INITIAL_SIZE = (800, 500)
 
     def __init__(self):
         super(MainWindow, self).__init__()
         self.setWindowTitle("Speech To Text")
+        self.resize(*self.INITIAL_SIZE)
 
         # toolbar
         toolbar = QToolBar()
         toolbar.setIconSize(QSize(16, 16))
         self.addToolBar(toolbar)
+
+        # add buttons to tool bar
+        save_action = QAction(QIcon("resources/disk-black.png"), "&Save", self)
+        save_action.triggered.connect(self.save_file)
+        save_action.setShortcut(QKeySequence("Ctrl+s"))
+        toolbar.addAction(save_action)
+
+        open_action = QAction(QIcon("resources/folder-horizontal-open.png"), "&Open", self)
+        open_action.triggered.connect(self.open_file)
+        open_action.setShortcut(QKeySequence("Ctrl+o"))
+        toolbar.addAction(open_action)
+
+        # conf_action = QAction(QIcon("resources/wrench-screwdriver.png"), "&Config", self)
+        # conf_action.triggered.connect(self.config)
+        # toolbar.addAction(conf_action)
 
         # status bar
         # self.setStatusBar(QStatusBar(self))
@@ -66,6 +83,15 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
         with open(self.WORKSPACE_FILE, 'w') as f:
             f.write(self.text_edit.toPlainText())
+
+    def open_file(self):
+        print('saved')
+
+    def save_file(self):
+        print('opened')
+
+    def config(self):
+        pass
 
 
 app = QApplication(sys.argv)
