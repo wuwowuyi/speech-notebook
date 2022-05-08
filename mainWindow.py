@@ -4,7 +4,7 @@ from pathlib import Path
 from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QIcon, QTextCursor, QAction, QKeySequence
 from PyQt6.QtWidgets import QApplication, QMainWindow, QToolBar, QStatusBar, QVBoxLayout, QWidget, QTextEdit, \
-    QPushButton, QStackedLayout, QLabel
+    QPushButton, QStackedLayout, QLabel, QFileDialog
 
 
 class MainWindow(QMainWindow):
@@ -12,6 +12,12 @@ class MainWindow(QMainWindow):
     # default file to save when the application is closed
     WORKSPACE_FILE = 'recordings.txt'
     INITIAL_SIZE = (800, 500)
+    FILE_FILTER = ("text/plain", "text/html")
+
+    MESSAGES = {
+        'to_save': 'content modified',
+        'saved': 'content saved'
+    }
 
     def __init__(self):
         super(MainWindow, self).__init__()
@@ -24,22 +30,25 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
 
         # add buttons to tool bar
-        save_action = QAction(QIcon("resources/disk-black.png"), "&Save", self)
-        save_action.triggered.connect(self.save_file)
-        save_action.setShortcut(QKeySequence("Ctrl+s"))
-        toolbar.addAction(save_action)
-
         open_action = QAction(QIcon("resources/folder-horizontal-open.png"), "&Open", self)
         open_action.triggered.connect(self.open_file)
         open_action.setShortcut(QKeySequence("Ctrl+o"))
         toolbar.addAction(open_action)
+
+        self.save_action = QAction(QIcon("resources/disk-black.png"), "&Save", self)
+        self.save_action.triggered.connect(self.save_file)
+        self.save_action.setShortcut(QKeySequence("Ctrl+s"))
+        self.save_action.setEnabled(False)
+        self.isopenfile = False  # a flag used for updating status
+        toolbar.addAction(self.save_action)
+        self.filepath = ''
 
         # conf_action = QAction(QIcon("resources/wrench-screwdriver.png"), "&Config", self)
         # conf_action.triggered.connect(self.config)
         # toolbar.addAction(conf_action)
 
         # status bar
-        # self.setStatusBar(QStatusBar(self))
+        self.setStatusBar(QStatusBar(self))
 
         # layout
         self.main_layout = QVBoxLayout()
@@ -53,6 +62,8 @@ class MainWindow(QMainWindow):
         # font size, font style
         self.text_edit = QTextEdit()
         self.stack_layout.addWidget(self.text_edit)
+        self.text_edit.textChanged.connect(self.set_tosave_status)
+
         self.label = QLabel("Recording")
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stack_layout.addWidget(self.label)
@@ -68,30 +79,65 @@ class MainWindow(QMainWindow):
         workspace_file = Path(self.WORKSPACE_FILE)
         if workspace_file.is_file():
             with open(workspace_file, 'r') as f:
+                self.isopenfile = True
                 self.text_edit.setText(f.read())
+
             # set cursor to end of content
             self.text_edit.moveCursor(QTextCursor.MoveOperation.End)
 
     def start_recording(self):
+        """Start recording voice. """
         self.stack_layout.setCurrentWidget(self.label)
 
     def stop_recording(self):
+        """Stop recording and insert voice to text into editor. """
         self.text_edit.insertPlainText("hello world")
         self.stack_layout.setCurrentWidget(self.text_edit)
 
     def closeEvent(self, event):
+        """Handle window close event. """
         super().closeEvent(event)
         with open(self.WORKSPACE_FILE, 'w') as f:
             f.write(self.text_edit.toPlainText())
 
-    def open_file(self):
-        print('saved')
-
-    def save_file(self):
-        print('opened')
-
     def config(self):
         pass
+
+    def open_file(self):
+        """Open an existing text file and load its content into the editor. """
+        dlg = QFileDialog()
+        dlg.setFileMode(QFileDialog.FileMode.ExistingFile)
+        dlg.setMimeTypeFilters(self.FILE_FILTER)
+
+        if dlg.exec():
+            filename = dlg.selectedFiles()
+            if len(filename) > 0:
+                self.filepath = filename[0]
+                with open(filename[0], 'r') as f:
+                    self.isopenfile = True
+                    self.text_edit.setText(f.read())
+
+    def save_file(self):
+        """Save content in editor to a file. """
+        filename, _ = QFileDialog().getSaveFileName(self, "Save File", self.filepath)
+        if filename:
+            with open(filename, 'w+') as f:
+                f.write(self.text_edit.toPlainText())
+
+            if self.filepath != filename:
+                self.filepath = filename
+            self.statusBar().showMessage(self.MESSAGES['saved'])
+            self.save_action.setEnabled(False)
+
+    def set_tosave_status(self):
+        """Update save button status and the message in the status bar in bottom. """
+        if not self.isopenfile:
+            self.statusBar().showMessage(self.MESSAGES['to_save'])
+            self.save_action.setEnabled(True)
+        else:
+            self.isopenfile = False  # clear the flag
+            self.statusBar().clearMessage()
+            self.save_action.setEnabled(False)
 
 
 app = QApplication(sys.argv)
@@ -99,4 +145,4 @@ app = QApplication(sys.argv)
 window = MainWindow()
 window.show()
 
-app.exec()
+sys.exit(app.exec())
