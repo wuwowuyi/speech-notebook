@@ -3,6 +3,7 @@
 #
 import re
 import sys
+import time
 
 from google.cloud import speech
 
@@ -10,9 +11,9 @@ import pyaudio
 import queue
 
 # Audio recording parameters
-RATE = 16000
-CHUNK = int(RATE / 10)  # 100ms
-
+RATE = 16000  # sampling rate, the number of frames per second
+#CHUNK = int(RATE / 10)  # 100ms. frames per buffer. I need RATE * 14.5
+CHUNK = 1024 * 8
 
 class MicrophoneStream:
     """Opens a recording stream as a generator yielding the audio chunks."""
@@ -56,6 +57,11 @@ class MicrophoneStream:
 
     def _fill_buffer(self, in_data, frame_count, time_info, status_flags):
         """Continuously collect data from the audio stream, into the buffer."""
+        # frame_count equals buffer size.
+
+        # http://people.csail.mit.edu/hubert/pyaudio/docs/#pyaudio.paContinue
+        print(status_flags)  # output 0
+
         self._buff.put(in_data)
         return None, pyaudio.paContinue
 
@@ -97,7 +103,7 @@ def listen_print_loop(responses):
     the next result to overwrite it, until the response is a final one. For the
     final one, print a newline to preserve the finalized transcription.
     """
-    num_chars_printed = 0
+    # https://cloud.google.com/python/docs/reference/speech/latest/google.cloud.speech_v1.types.StreamingRecognizeResponse
     for response in responses:
         if not response.results:
             continue
@@ -109,60 +115,47 @@ def listen_print_loop(responses):
         if not result.alternatives:
             continue
 
-        # Display the transcription of the top alternative.
-        transcript = result.alternatives[0].transcript
-
-        # Display interim results, but with a carriage return at the end of the
-        # line, so subsequent lines will overwrite them.
-        #
-        # If the previous result was longer than this one, we need to print
-        # some extra spaces to overwrite the previous result
-        overwrite_chars = " " * (num_chars_printed - len(transcript))
-
-        if not result.is_final:
-            sys.stdout.write(transcript + overwrite_chars + "\r")
-            sys.stdout.flush()
-
-            num_chars_printed = len(transcript)
-
-        else:
-            print(transcript + overwrite_chars)
-
-            # Exit recognition if any of the transcribed phrases could be
-            # one of our keywords.
-            if re.search(r"\b(exit|quit)\b", transcript, re.I):
-                print("Exiting..")
-                break
-
-            num_chars_printed = 0
+        if result.is_final:
+            # Display the transcription of the top alternative.
+            transcript = result.alternatives[0].transcript
+            print(transcript)
+            break
 
 
 def main():
     # See http://g.co/cloud/speech/docs/languages
     # for a list of supported languages.
-    language_code = "en-US"  # a BCP-47 language tag
+    language_code = "zh"  # a BCP-47 language tag
 
     client = speech.SpeechClient()
     config = speech.RecognitionConfig(
         encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
         sample_rate_hertz=RATE,
+        audio_channel_count=1,
         language_code=language_code,
+        model='default',
+        enable_automatic_punctuation=True,
     )
 
     streaming_config = speech.StreamingRecognitionConfig(
-        config=config, interim_results=True
+        config=config,
+        single_utterance=False,
+        interim_results=False
     )
 
     with MicrophoneStream(RATE, CHUNK) as stream:
+        print(f"start recording at {time.strftime('%X')}")
         audio_generator = stream.generator()
         requests = (
             speech.StreamingRecognizeRequest(audio_content=content)
             for content in audio_generator
         )
 
+        print(f"start streaming recognize at {time.strftime('%X')}")
         responses = client.streaming_recognize(streaming_config, requests)
 
         # Now, put the transcription responses to use.
+        print(f"start printing responses at {time.strftime('%X')}")
         listen_print_loop(responses)
 
 
