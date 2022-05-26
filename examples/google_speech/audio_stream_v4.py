@@ -2,15 +2,19 @@
 # From https://cloud.google.com/speech-to-text/docs/streaming-recognize#perform_streaming_speech_recognition_on_an_audio_stream
 #
 import asyncio
+import copy
+import logging
 import queue
 from datetime import datetime
 
 import pyaudio
 from google.cloud import speech
 
+logger = logging.getLogger("asyncio")  # TODO
+
 # Audio recording parameters
 RATE = 16000  # sampling rate, the number of frames per second
-CHUNK = 1024 * 8  # frames per buffer.
+CHUNK = 1024  # frames per buffer.
 CHUNK_DURATION = CHUNK / RATE  # the duration of a chunk
 
 # Google charges each request rounded up to the nearest increment of 15 seconds
@@ -21,11 +25,13 @@ MAX_LENGTH_PER_REQUEST = 15
 class MicrophoneStream:
     """Opens a recording stream as a generator yielding the audio chunks."""
 
-    def __init__(self, rate: int, chunk: int):
+    def __init__(self, rate: int, chunk: int, main_loop):
         self._rate = rate
         self._chunk = chunk
-        self._buff = queue.Queue()  # a thread-safe buffer of audio data
         self._closed = True  # stream status flag
+        self._in_buff = asyncio.Queue()  # in audio from microphone
+        self._out_buff = queue.Queue()  # out audio to transcribe
+        self.main_loop = main_loop  # event loop of the main thread
 
     def __enter__(self):
         self._audio_interface = pyaudio.PyAudio()
@@ -51,7 +57,7 @@ class MicrophoneStream:
         self._closed = True
         # Signal the generator to terminate so that the client's
         # streaming_recognize method will not block the process termination.
-        self._buff.put(None)
+        self._in_buff.put_nowait(None)
         self._audio_interface.terminate()
 
     def _fill_buffer(self, in_data, frame_count, time_info, status_flags):
@@ -71,42 +77,44 @@ class MicrophoneStream:
             print('error loading time info')  # TODO: log this error
             return None, pyaudio.paContinue  # ignore this data chunk
 
-        self._buff.put((in_data.copy(), duration))
+        self.main_loop.call_soon_threadsafe(self._in_buff.put_nowait, (copy.copy(in_data), duration))
         return None, pyaudio.paContinue
 
-    def generator(self):
+    async def generate(self):
         """Called to generate audio data read from buffer. """
-        # total length of audio generated in one call to this function.
+        print(f"Data generation started at {datetime.utcnow().strftime('%H:%M:%S')}")
         length = 0  # in seconds
-
         data = []
-        while not self._closed:
-            while True:
-                try:
-                    item = self._buff.get(block=True, timeout=CHUNK_DURATION * 1.2)
-                    if item is None:
-                        return
-                    chunk, duration = item
-                    data.append(chunk)
-                    length += duration
-                    if MAX_LENGTH_PER_REQUEST - length < (CHUNK_DURATION * 1.2):
-                        print(f"yield data and return, the length is {length}")  # TODO, log debug
-                        # stop reading data from buffer.
-                        yield b"".join(data)
-                        return
-                except queue.Empty:
+        while True:
+            try:
+                item = await self._in_buff.get()
+                if item is None:
                     break
+                chunk, duration = item
+                data.append(chunk)
+                length += duration
+                if MAX_LENGTH_PER_REQUEST - length < CHUNK_DURATION * 1.5:
+                    print(f"yield data and return at {datetime.utcnow().strftime('%H:%M:%S')}, the length is {length}")  # TODO, log debug
+                    # stop reading data from buffer.
+                    self._out_buff.put(copy.copy(b"".join(data)))
+                    data.clear()
+                    length = 0
+            except:
+                break
 
-            if len(data) > 0:
-                print('Queue is emtpy. yield data block')
-                yield b"".join(data)
-                data.clear()
+        if len(data) > 0:
+            print('Queue is emtpy. yield remaining data block')
+            self._out_buff.put(copy.copy(b"".join(data)))
+        self._out_buff.put(None)
 
     def closed(self):
         return self._closed
 
+    def out_queue(self):
+        return self._out_buff
 
-def _listen_print_loop(responses):
+
+def _listen_print_loop(response):
     """Iterates through server responses and prints them.
 
     The responses passed is a generator that will block until a response
@@ -122,40 +130,38 @@ def _listen_print_loop(responses):
     final one, print a newline to preserve the finalized transcription.
     """
     # https://cloud.google.com/python/docs/reference/speech/latest/google.cloud.speech_v1.types.StreamingRecognizeResponse
-    for response in responses:
-        if not response.results:
-            continue
 
-        # The `results` list is consecutive. For streaming, we only care about
-        # the first result being considered, since once it's `is_final`, it
-        # moves on to considering the next utterance.
-        result = response.results[0]
-        if not result.alternatives:
-            continue
+    if not response.results:
+        return
 
-        if result.is_final:
-            # Display the transcription of the top alternative.
-            transcript = result.alternatives[0].transcript
-            print(transcript)
-            break
+    # The `results` list is consecutive. For streaming, we only care about
+    # the first result being considered, since once it's `is_final`, it
+    # moves on to considering the next utterance.
+    result = response.results[0]
+    if result.alternatives:
+        transcript = result.alternatives[0].transcript
+        print(transcript)
 
 
-def _transcribe(client: speech.SpeechClient,
-                config: speech.StreamingRecognitionConfig,
-                requests_queue: queue.Queue):
-    while True:
-        try:
-            requests = requests_queue.get(block=True, timeout=0.05)
-            print(f"start streaming recognize at {datetime.utcnow().strftime('%H:%M:%S.%f')}")
-            responses = client.streaming_recognize(config, requests)
-            requests_queue.task_done()
+def _transcribe(config: speech.RecognitionConfig, data_queue):
+    #logger.info(f"Transcribe thread started at {time.strfmt('%X')}")
+    print(f"Transcribe thread started at {datetime.utcnow().strftime('%H:%M:%S')}")
+    with speech.SpeechClient() as client:
+        while True:
+            try:
+                content = data_queue.get(timeout=MAX_LENGTH_PER_REQUEST)  # wait for data. blocking
+                if content is None:
+                    return
 
-            # Now, put the transcription responses to use.
-            print(f"start printing responses at {datetime.utcnow().strftime('%H:%M:%S.%f')}")
-            _listen_print_loop(responses)
-        except queue.Empty:
-            print('no more requests.')
-            return
+                audio = speech.RecognitionAudio(content=content)
+                print(f"start streaming recognize at {datetime.utcnow().strftime('%H:%M:%S.%f')}")
+                response = client.recognize(config=config, audio=audio)
+
+                # Now, put the transcription responses to use.
+                print(f"start printing responses at {datetime.utcnow().strftime('%H:%M:%S.%f')}")
+                _listen_print_loop(response)
+            except queue.Empty:
+                break
 
 
 async def main():
@@ -163,7 +169,6 @@ async def main():
     # for a list of supported languages.
     language_code = "zh"  # a BCP-47 language tag
 
-    client = speech.SpeechClient()
     config = speech.RecognitionConfig(
         encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
         sample_rate_hertz=RATE,
@@ -173,33 +178,14 @@ async def main():
         enable_automatic_punctuation=True,
     )
 
-    streaming_config = speech.StreamingRecognitionConfig(
-        config=config,
-        single_utterance=False,
-        interim_results=False
-    )
+    event_loop = asyncio.get_running_loop()
 
-    with MicrophoneStream(RATE, CHUNK) as stream:
-        requests_queue = queue.Queue(3)  # TODO: put a limit on queue
-
-        while not stream.closed():
-            requests = (
-                speech.StreamingRecognizeRequest(audio_content=content)
-                for content in stream.generator()
-            )
-
-            try:
-                requests_queue.put_nowait(requests)
-            except queue.Full:
-                print("Google cloud API is too slow. aborting.")
-                break
-
-            num_threads = requests_queue.qsize()
-            asyncio.gather(
-                *(asyncio.to_thread(_transcribe, client, streaming_config, requests_queue)
-                  for i in num_threads)
-            )
+    with MicrophoneStream(RATE, CHUNK, event_loop) as stream:
+        await asyncio.gather(
+            stream.generate(),
+            asyncio.to_thread(_transcribe, config, stream.out_queue())
+        )
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
