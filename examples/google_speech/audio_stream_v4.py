@@ -10,7 +10,6 @@ from datetime import datetime
 import pyaudio
 from google.cloud import speech
 
-logger = logging.getLogger("asyncio")  # TODO
 
 # Audio recording parameters
 RATE = 16000  # sampling rate, the number of frames per second
@@ -70,11 +69,12 @@ class MicrophoneStream:
         """
 
         if status_flags in (pyaudio.paInputUnderflow, pyaudio.paInputOverflow):
-            raise Exception  # TODO. add log
+            logging.warning(f"error in filling buffers. status is {status_flags}")
+            raise Exception
 
         duration = time_info.get('current_time', 0) - time_info.get('input_buffer_adc_time', 0)
         if duration <= 0 or duration > CHUNK_DURATION * 3:
-            print('error loading time info')  # TODO: log this error
+            logging.error('error loading time info')
             return None, pyaudio.paContinue  # ignore this data chunk
 
         self.main_loop.call_soon_threadsafe(self._in_buff.put_nowait, (copy.copy(in_data), duration))
@@ -82,7 +82,7 @@ class MicrophoneStream:
 
     async def generate(self):
         """Called to generate audio data read from buffer. """
-        print(f"Data generation started at {datetime.utcnow().strftime('%H:%M:%S')}")
+        logging.debug(f"\nData generation started at {datetime.utcnow().strftime('%H:%M:%S')}")
         length = 0  # in seconds
         data = []
         while True:
@@ -94,7 +94,7 @@ class MicrophoneStream:
                 data.append(chunk)
                 length += duration
                 if MAX_LENGTH_PER_REQUEST - length < CHUNK_DURATION * 1.5:
-                    print(f"yield data and return at {datetime.utcnow().strftime('%H:%M:%S')}, the length is {length}")  # TODO, log debug
+                    logging.debug(f"yield data and return at {datetime.utcnow().strftime('%H:%M:%S')}, the length is {length}")  # TODO, log debug
                     # stop reading data from buffer.
                     self._out_buff.put(copy.copy(b"".join(data)))
                     data.clear()
@@ -103,7 +103,7 @@ class MicrophoneStream:
                 break
 
         if len(data) > 0:
-            print('Queue is emtpy. yield remaining data block')
+            logging.debug('Queue is emtpy. yield remaining data block')
             self._out_buff.put(copy.copy(b"".join(data)))
         self._out_buff.put(None)
 
@@ -144,8 +144,7 @@ def _listen_print_loop(response):
 
 
 def _transcribe(config: speech.RecognitionConfig, data_queue):
-    #logger.info(f"Transcribe thread started at {time.strfmt('%X')}")
-    print(f"Transcribe thread started at {datetime.utcnow().strftime('%H:%M:%S')}")
+    logging.debug(f"\nTranscribe thread started at {datetime.utcnow().strftime('%H:%M:%S')}")
     with speech.SpeechClient() as client:
         while True:
             try:
@@ -154,11 +153,11 @@ def _transcribe(config: speech.RecognitionConfig, data_queue):
                     return
 
                 audio = speech.RecognitionAudio(content=content)
-                print(f"start streaming recognize at {datetime.utcnow().strftime('%H:%M:%S.%f')}")
+                logging.debug(f"start streaming recognize at {datetime.utcnow().strftime('%H:%M:%S.%f')}")
                 response = client.recognize(config=config, audio=audio)
 
                 # Now, put the transcription responses to use.
-                print(f"start printing responses at {datetime.utcnow().strftime('%H:%M:%S.%f')}")
+                logging.debug(f"start printing responses at {datetime.utcnow().strftime('%H:%M:%S.%f')}")
                 _listen_print_loop(response)
             except queue.Empty:
                 break
@@ -188,4 +187,5 @@ async def main():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(filename='audio_transcribe.log', level=logging.DEBUG)
     asyncio.run(main())
