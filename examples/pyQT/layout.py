@@ -47,10 +47,15 @@ class MainWindow(QMainWindow):
         widget.setLayout(layout1)
         self.setCentralWidget(widget)
 
-app = QApplication(sys.argv)
 
-window = MainWindow()
-window.show()
+def main():
+    app = QApplication(sys.argv)
 
-app.exec()
+    window = MainWindow()
+    window.show()
 
+    app.exec()
+
+
+if __name__ == '__main__':
+    main()
