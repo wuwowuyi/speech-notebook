@@ -97,8 +97,20 @@ class MainWindow(QMainWindow):
             # set cursor to end of content
             self.text_edit.moveCursor(QTextCursor.MoveOperation.End)
 
-    def _write_back(self, text):
-        self.text_edit.insertPlainText(text)
+    def _write_back(self, content, insert_pos=-1):
+        if insert_pos == -1:  # insert to where the cursor is
+            self.text_edit.insertPlainText(content)
+            return
+
+        cursor = self.text_edit.textCursor()
+        current_pos = cursor.position()
+        if current_pos == insert_pos:
+            self.text_edit.insertPlainText(content)
+        else:
+            after = repr(self.text_edit.document)[insert_pos:]
+            cursor.setPosition(insert_pos)
+            cursor.insertText(content)
+            cursor.insertText(after)
 
     def start_recording(self):
         """Start recording voice. """
@@ -131,7 +143,7 @@ class MainWindow(QMainWindow):
     def stop_recording(self):
         """Stop recording and insert voice to text into editor. """
         if self.worker:
-            self.worker.stop()
+            self.worker.stop(self.text_edit.textCursor().position())
         self.stack_layout.setCurrentWidget(self.text_edit)
 
     def closeEvent(self, event):

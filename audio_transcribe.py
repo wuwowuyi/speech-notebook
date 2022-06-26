@@ -98,7 +98,7 @@ class MicrophoneStream:
                 chunk, duration = item
                 data += chunk
                 length += duration
-                if MAX_LENGTH_PER_REQUEST - length < CHUNK_DURATION * 1.5:
+                if MAX_LENGTH_PER_REQUEST - length < CHUNK_DURATION * 2:
                     logging.debug(
                         f"yield data and return at {datetime.now().strftime('%H:%M:%S')}, the length is {length}")  # TODO, log debug
                     # stop reading data from buffer.
@@ -114,7 +114,7 @@ class MicrophoneStream:
 
 class AudioTranscriber(QObject):
     finished = pyqtSignal()
-    progress = pyqtSignal(str)
+    progress = pyqtSignal(str, int)
 
     language_code = "zh"  # See http://g.co/cloud/speech/docs/languages
     config = speech.RecognitionConfig(
@@ -126,20 +126,22 @@ class AudioTranscriber(QObject):
         enable_automatic_punctuation=True,
     )
 
-    # def __init__(self):
-    #     super().__init__()
-    #     self.loop = asyncio.get_running_loop()
-
-    # async def _waiter(self, stop_callback: Callable[[], None]) -> None:
-    #     await self.sentinel.wait()
-    #     print('about to quit')
-    #     stop_callback()  # terminate. trigger stop of all tasks
+    def __init__(self):
+        super().__init__()
+        self.insert_pos = -1  # -1 means to insert text back to where cursor is
 
     def run(self):
         asyncio.run(self._run())
 
-    def stop(self):
-        self.loop.call_soon_threadsafe(self.stream.stop)
+    def stop(self, current_pos: int) -> None:
+        """
+        called from the main GUI thread
+        :param current_pos: current cursor position of text editor
+        """
+        def cleanup():
+            self.insert_pos = current_pos
+            self.stream.stop()
+        self.loop.call_soon_threadsafe(cleanup)
 
     async def _run(self) -> None:
         """Core method. start recording and transcribe audio into text. """
@@ -169,7 +171,10 @@ class AudioTranscriber(QObject):
 
     async def _copier(self, text_queue: asyncio.Queue[str]) -> None:
         while text := await text_queue.get():
-            self.loop.call_soon(self.progress.emit, text)
+            logging.debug(f"write back {text} at {'cursor' if self.insert_pos == -1 else self.insert_pos}")
+            self.progress.emit(text, self.insert_pos)
+            if self.insert_pos != -1:  # move in case there is more transcribed text to write back
+                self.insert_pos += len(text)
 
     def _transcribe(self, audio_buff: queue.Queue[bytes], callback: Callable[[str], None]):
         logging.debug(f"\nTranscribe thread started at {datetime.now().strftime('%H:%M:%S')}")
@@ -183,7 +188,7 @@ class AudioTranscriber(QObject):
                     audio = speech.RecognitionAudio(content=content)
 
                     logging.debug(f"start streaming recognize at {datetime.now().strftime('%H:%M:%S.%f')}")
-                    # response = client.recognize(config=self.config, audio=audio)
+                    #response = client.recognize(config=self.config, audio=audio)
                     time.sleep(3)
                     callback("hello world....")
 
