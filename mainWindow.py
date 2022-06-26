@@ -1,10 +1,15 @@
-import sys
+import logging
+import time
 from pathlib import Path
 
-from PyQt6.QtCore import QSize, Qt
+from PyQt6.QtCore import QSize, Qt, QThread
 from PyQt6.QtGui import QIcon, QTextCursor, QAction, QKeySequence
-from PyQt6.QtWidgets import QApplication, QMainWindow, QToolBar, QStatusBar, QVBoxLayout, QWidget, QTextEdit, \
+from PyQt6.QtWidgets import QMainWindow, QToolBar, QStatusBar, QVBoxLayout, QWidget, QTextEdit, \
     QPushButton, QStackedLayout, QLabel, QFileDialog
+
+
+# TODO:  connect clean-up code to the aboutToQuit() signal, instead of putting it in your application’s main() function
+from audio_transcribe import AudioTranscriber
 
 
 class MainWindow(QMainWindow):
@@ -19,9 +24,14 @@ class MainWindow(QMainWindow):
         'saved': 'content saved'
     }
 
+    # configs to support
+    # - language
+    # - editor font size, font style
+    #
+
     def __init__(self):
         super(MainWindow, self).__init__()
-        self.setWindowTitle("Speech To Text")
+        self.setWindowTitle("Voice Notebook")
         self.resize(*self.INITIAL_SIZE)
 
         # toolbar
@@ -29,7 +39,7 @@ class MainWindow(QMainWindow):
         toolbar.setIconSize(QSize(16, 16))
         self.addToolBar(toolbar)
 
-        # add buttons to tool bar
+        # add buttons to toolbar
         open_action = QAction(QIcon("resources/folder-horizontal-open.png"), "&Open", self)
         open_action.triggered.connect(self.open_file)
         open_action.setShortcut(QKeySequence("Ctrl+o"))
@@ -41,7 +51,7 @@ class MainWindow(QMainWindow):
         self.save_action.setEnabled(False)
         self.isopenfile = False  # a flag used for updating status
         toolbar.addAction(self.save_action)
-        self.filepath = ''
+        self.filepath = ''  # path used last time a file was open or saved
 
         # conf_action = QAction(QIcon("resources/wrench-screwdriver.png"), "&Config", self)
         # conf_action.triggered.connect(self.config)
@@ -68,6 +78,8 @@ class MainWindow(QMainWindow):
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stack_layout.addWidget(self.label)
 
+        self.transcribe_thread = None
+        self.worker = None
         record_btn = QPushButton(QIcon('resources/speaker-volume.png'), 'Hold to record', self)
         self.main_layout.addWidget(record_btn)
         record_btn.pressed.connect(self.start_recording)
@@ -85,13 +97,41 @@ class MainWindow(QMainWindow):
             # set cursor to end of content
             self.text_edit.moveCursor(QTextCursor.MoveOperation.End)
 
+    def _write_back(self, text):
+        self.text_edit.insertPlainText(text)
+
     def start_recording(self):
         """Start recording voice. """
+
+        logging.debug(f"start recording....{time.strftime('%X')}")
         self.stack_layout.setCurrentWidget(self.label)
+
+        self.transcribe_thread = QThread()
+        self.worker = AudioTranscriber()
+        self.worker.moveToThread(self.transcribe_thread)
+
+        self.transcribe_thread.started.connect(self.worker.run)
+        self.worker.finished.connect(self.transcribe_thread.quit)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.transcribe_thread.finished.connect(self.transcribe_thread.deleteLater)
+
+        self.worker.progress.connect(self._write_back)
+        self.transcribe_thread.start()
+
+        # Final resets
+        # self.longRunningBtn.setEnabled(False)
+        # self.thread.finished.connect(
+        #     lambda: self.longRunningBtn.setEnabled(True)
+        # )
+        # self.thread.finished.connect(
+        #     lambda: self.stepLabel.setText("Long-Running Step: 0")
+        # )
+
 
     def stop_recording(self):
         """Stop recording and insert voice to text into editor. """
-        self.text_edit.insertPlainText("hello world")
+        if self.worker:
+            self.worker.stop()
         self.stack_layout.setCurrentWidget(self.text_edit)
 
     def closeEvent(self, event):
@@ -140,9 +180,3 @@ class MainWindow(QMainWindow):
             self.save_action.setEnabled(False)
 
 
-app = QApplication(sys.argv)
-
-window = MainWindow()
-window.show()
-
-sys.exit(app.exec())
