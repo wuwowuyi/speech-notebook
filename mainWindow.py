@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 
 from PyQt6.QtCore import QSize, Qt, QThread
-from PyQt6.QtGui import QIcon, QTextCursor, QAction, QKeySequence
+from PyQt6.QtGui import QIcon, QTextCursor, QAction, QKeySequence, QCursor
 from PyQt6.QtWidgets import QMainWindow, QToolBar, QStatusBar, QVBoxLayout, QWidget, QTextEdit, \
     QPushButton, QStackedLayout, QLabel, QFileDialog
 
@@ -21,7 +21,10 @@ class MainWindow(QMainWindow):
 
     MESSAGES = {
         'to_save': 'content modified',
-        'saved': 'content saved'
+        'saved': 'content saved',
+        'to_record': 'Press and hold to record',
+        'recording': 'Recording and transcribing in process',
+        'to_finish': 'Transcribing in process, please wait ...'
     }
 
     # configs to support
@@ -58,7 +61,9 @@ class MainWindow(QMainWindow):
         # toolbar.addAction(conf_action)
 
         # status bar
-        self.setStatusBar(QStatusBar(self))
+        status_bar = QStatusBar(self)
+        self.setStatusBar(status_bar)
+        status_bar.setFixedHeight(30)
 
         # layout
         self.main_layout = QVBoxLayout()
@@ -80,10 +85,12 @@ class MainWindow(QMainWindow):
 
         self.transcribe_thread = None
         self.worker = None
-        record_btn = QPushButton(QIcon('resources/speaker-volume.png'), 'Hold to record', self)
-        self.main_layout.addWidget(record_btn)
-        record_btn.pressed.connect(self.start_recording)
-        record_btn.released.connect(self.stop_recording)
+        self.record_btn = QPushButton(QIcon('resources/speaker-volume.png'), self.MESSAGES['to_record'], self)
+        self.main_layout.addWidget(self.record_btn)
+        self.record_btn.pressed.connect(self.start_recording)
+        self.record_btn.released.connect(self.stop_recording)
+        self.record_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.record_btn.setFixedHeight(50)
 
         self.load_content()
 
@@ -112,6 +119,10 @@ class MainWindow(QMainWindow):
             cursor.insertText(content)
             cursor.insertText(after)
 
+    def enable_recording(self):
+        self.record_btn.setEnabled(True)
+        self.record_btn.setText(self.MESSAGES['to_record'])
+
     def start_recording(self):
         """Start recording voice. """
 
@@ -130,21 +141,20 @@ class MainWindow(QMainWindow):
         self.worker.progress.connect(self._write_back)
         self.transcribe_thread.start()
 
-        # Final resets
-        # self.longRunningBtn.setEnabled(False)
-        # self.thread.finished.connect(
-        #     lambda: self.longRunningBtn.setEnabled(True)
-        # )
-        # self.thread.finished.connect(
-        #     lambda: self.stepLabel.setText("Long-Running Step: 0")
-        # )
-
+        self.record_btn.setCursor(Qt.CursorShape.ClosedHandCursor)
+        self.record_btn.setText(self.MESSAGES['recording'])
+        self.transcribe_thread.finished.connect(self.enable_recording)
+        # do not disable the button here otherwise it would terminate the recording thread.
 
     def stop_recording(self):
-        """Stop recording and insert voice to text into editor. """
+        """Stop recording and insert transcribed text into editor. """
         if self.worker:
             self.worker.stop(self.text_edit.textCursor().position())
+
         self.stack_layout.setCurrentWidget(self.text_edit)
+        self.record_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.record_btn.setText(self.MESSAGES['to_finish'])
+        self.record_btn.setEnabled(False)
 
     def closeEvent(self, event):
         """Handle window close event. """
