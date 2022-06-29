@@ -1,9 +1,13 @@
+from __future__ import annotations
+from typing import *
+
 import logging
+import re
 import time
 from pathlib import Path
 
 from PyQt6.QtCore import QSize, Qt, QThread
-from PyQt6.QtGui import QIcon, QTextCursor, QAction, QKeySequence, QCursor
+from PyQt6.QtGui import QIcon, QTextCursor, QAction, QKeySequence
 from PyQt6.QtWidgets import QMainWindow, QToolBar, QStatusBar, QVBoxLayout, QWidget, QTextEdit, \
     QPushButton, QStackedLayout, QLabel, QFileDialog
 
@@ -14,27 +18,28 @@ from audio_transcribe import AudioTranscriber
 
 class MainWindow(QMainWindow):
 
-    # default file to save when the application is closed
-    WORKSPACE_FILE = 'recordings.txt'
-    INITIAL_SIZE = (800, 500)
-    FILE_FILTER = ("text/plain", "text/html")
+    def __init__(self, config: Dict[str, ...]):
+        super().__init__()
+        self._init_configs(config)
+        self._init_widgets()
+        self._load_content()
 
-    MESSAGES = {
-        'to_save': 'content modified',
-        'saved': 'content saved',
-        'to_record': 'Press and hold to record',
-        'recording': 'Recording and transcribing in process',
-        'to_finish': 'Transcribing in process, please wait ...'
-    }
+    def _init_configs(self, config):
+        # default file to save when the application is closed
+        self.WORKSPACE_FILE = config.get('WORKSPACE_FILE', 'recordings.txt')
+        self.INITIAL_SIZE = config.get('WINDOW_SIZE', (800, 500))
+        self.FILE_FILTER = ("text/plain", "text/html")
 
-    # configs to support
-    # - language
-    # - editor font size, font style
-    #
+        self.MESSAGES = {
+            'modified': config.get('MESSAGE.CONTENT_MODIFIED', 'content modified'),
+            'saved': config.get('MESSAGE.CONTENT_SAVED', 'content saved'),
+            'to_record': config.get('MESSAGE.TO_RECORD_HINT', 'Press and hold to record'),
+            'recording': config.get('MESSAGE.IN_PROGRESS_HINT', 'Recording and transcribing in process'),
+            'to_finish': config.get('MESSAGE.TRANSCRIBE_TO_FINISH_HINT', 'Transcribing still in process, please wait ...'),
+        }
 
-    def __init__(self):
-        super(MainWindow, self).__init__()
-        self.setWindowTitle("Voice Notebook")
+    def _init_widgets(self):
+        self.setWindowTitle("Speech Notebook")
         self.resize(*self.INITIAL_SIZE)
 
         # toolbar
@@ -55,10 +60,6 @@ class MainWindow(QMainWindow):
         self.isopenfile = False  # a flag used for updating status
         toolbar.addAction(self.save_action)
         self.filepath = ''  # path used last time a file was open or saved
-
-        # conf_action = QAction(QIcon("resources/wrench-screwdriver.png"), "&Config", self)
-        # conf_action.triggered.connect(self.config)
-        # toolbar.addAction(conf_action)
 
         # status bar
         status_bar = QStatusBar(self)
@@ -83,18 +84,18 @@ class MainWindow(QMainWindow):
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stack_layout.addWidget(self.label)
 
-        self.transcribe_thread = None
-        self.worker = None
+        # set up the record button
         self.record_btn = QPushButton(QIcon('resources/speaker-volume.png'), self.MESSAGES['to_record'], self)
         self.main_layout.addWidget(self.record_btn)
         self.record_btn.pressed.connect(self.start_recording)
         self.record_btn.released.connect(self.stop_recording)
         self.record_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.record_btn.setFixedHeight(50)
+        self.transcribe_thread = None
+        self.worker = None
+        self.recording = False
 
-        self.load_content()
-
-    def load_content(self):
+    def _load_content(self):
         workspace_file = Path(self.WORKSPACE_FILE)
         if workspace_file.is_file():
             with open(workspace_file, 'r') as f:
@@ -104,24 +105,49 @@ class MainWindow(QMainWindow):
             # set cursor to end of content
             self.text_edit.moveCursor(QTextCursor.MoveOperation.End)
 
-    def _write_back(self, content, insert_pos=-1):
-        if insert_pos == -1:  # insert to where the cursor is
-            self.text_edit.insertPlainText(content)
+    def _write_back(self, text, html=False):
+        if self.recording:
+            self.text_edit.insertPlainText(text)
             return
 
-        cursor = self.text_edit.textCursor()
-        current_pos = cursor.position()
-        if current_pos == insert_pos:
-            self.text_edit.insertPlainText(content)
-        else:
-            after = repr(self.text_edit.document)[insert_pos:]
-            cursor.setPosition(insert_pos)
-            cursor.insertText(content)
-            cursor.insertText(after)
+        if not self.recording and html:
+            self.text_edit.insertHtml(text)
+            return
 
-    def enable_recording(self):
+        # now insert to document which the cursor may have moved away
+        current_pos = self.text_edit.textCursor().position()
+        doc_html = self.text_edit.document().toHtml()
+        to_finish_tag_idx = doc_html.index("<span style=")
+        before_tag_html = doc_html[:to_finish_tag_idx]
+        new_html = ''.join((before_tag_html, text, doc_html[to_finish_tag_idx:]))
+        self.text_edit.setHtml(new_html)
+
+        start = before_tag_html.index("</head><body")
+        before_tag_text = re.sub("<[^>]+>", "", before_tag_html[start:])
+        cursor = self.text_edit.textCursor()
+        cursor.setPosition(current_pos + len(text) if current_pos > len(before_tag_text) else current_pos)
+        self.text_edit.setTextCursor(cursor)
+
+    def _enable_recording(self):
         self.record_btn.setEnabled(True)
         self.record_btn.setText(self.MESSAGES['to_record'])
+        self._cleanup_tags()
+
+    def _cleanup_tags(self):
+        """remove to_finish tag"""
+        cursor = self.text_edit.textCursor()
+        current_pos = cursor.position()
+        doc_html = self.text_edit.document().toHtml()
+
+        to_finish_tag_idx = doc_html.index("<span style=")
+        before_tag_html = doc_html[:to_finish_tag_idx]
+        start = before_tag_html.index("</head><body")
+        before_tag_text = re.sub("<[^>]+>", "", before_tag_html[start:])
+
+        content = re.sub("<span style=.+</span>", "", doc_html)
+        self.text_edit.setHtml(content)
+        cursor.setPosition(current_pos - 3 if current_pos > len(before_tag_text) else current_pos)  # 3 is the length of '...'
+        self.text_edit.setTextCursor(cursor)
 
     def start_recording(self):
         """Start recording voice. """
@@ -140,16 +166,18 @@ class MainWindow(QMainWindow):
 
         self.worker.progress.connect(self._write_back)
         self.transcribe_thread.start()
+        self.recording = True
 
         self.record_btn.setCursor(Qt.CursorShape.ClosedHandCursor)
         self.record_btn.setText(self.MESSAGES['recording'])
-        self.transcribe_thread.finished.connect(self.enable_recording)
+        self.transcribe_thread.finished.connect(self._enable_recording)
         # do not disable the button here otherwise it would terminate the recording thread.
 
     def stop_recording(self):
         """Stop recording and insert transcribed text into editor. """
+        self.recording = False
         if self.worker:
-            self.worker.stop(self.text_edit.textCursor().position())
+            self.worker.stop()
 
         self.stack_layout.setCurrentWidget(self.text_edit)
         self.record_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -161,9 +189,6 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
         with open(self.WORKSPACE_FILE, 'w') as f:
             f.write(self.text_edit.toPlainText())
-
-    def config(self):
-        pass
 
     def open_file(self):
         """Open an existing text file and load its content into the editor. """
@@ -194,11 +219,9 @@ class MainWindow(QMainWindow):
     def set_tosave_status(self):
         """Update save button status and the message in the status bar in bottom. """
         if not self.isopenfile:
-            self.statusBar().showMessage(self.MESSAGES['to_save'])
+            self.statusBar().showMessage(self.MESSAGES['modified'])
             self.save_action.setEnabled(True)
         else:
             self.isopenfile = False  # clear the flag
             self.statusBar().clearMessage()
             self.save_action.setEnabled(False)
-
-

@@ -114,7 +114,8 @@ class MicrophoneStream:
 
 class AudioTranscriber(QObject):
     finished = pyqtSignal()
-    progress = pyqtSignal(str, int)
+    progress = pyqtSignal(str, bool)
+    TO_FINISH_PLACE_HOLDER = "<span style='background-color: #ADD8E6;'>...</span>"
 
     language_code = "zh"  # See http://g.co/cloud/speech/docs/languages
     config = speech.RecognitionConfig(
@@ -126,20 +127,20 @@ class AudioTranscriber(QObject):
         enable_automatic_punctuation=True,
     )
 
-    def __init__(self):
-        super().__init__()
-        self.insert_pos = -1  # -1 means to insert text back to where cursor is
+    # def __init__(self):
+    #     super().__init__()
+    #     self.insert_pos = -1  # -1 means to insert text back to where cursor is
 
     def run(self):
         asyncio.run(self._run())
 
-    def stop(self, current_pos: int) -> None:
+    def stop(self) -> None:
         """
         called from the main GUI thread
         :param current_pos: current cursor position of text editor
         """
         def cleanup():
-            self.insert_pos = current_pos
+            self.progress.emit(self.TO_FINISH_PLACE_HOLDER, True)
             self.stream.stop()
         self.loop.call_soon_threadsafe(cleanup)
 
@@ -171,10 +172,8 @@ class AudioTranscriber(QObject):
 
     async def _copier(self, text_queue: asyncio.Queue[str]) -> None:
         while text := await text_queue.get():
-            logging.debug(f"write back {text} at {'cursor' if self.insert_pos == -1 else self.insert_pos}")
-            self.progress.emit(text, self.insert_pos)
-            if self.insert_pos != -1:  # move in case there is more transcribed text to write back
-                self.insert_pos += len(text)
+            logging.debug(f"write back {text}")
+            self.progress.emit(text, False)
 
     def _transcribe(self, audio_buff: queue.Queue[bytes], callback: Callable[[str], None]):
         logging.debug(f"\nTranscribe thread started at {datetime.now().strftime('%H:%M:%S')}")
