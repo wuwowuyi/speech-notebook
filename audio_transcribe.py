@@ -2,7 +2,6 @@ from __future__ import annotations
 from typing import *
 
 import functools
-import threading
 import time
 
 import asyncio
@@ -117,27 +116,23 @@ class AudioTranscriber(QObject):
     progress = pyqtSignal(str, bool)
     TO_FINISH_PLACE_HOLDER = "<span style='background-color: #ADD8E6;'>...</span>"
 
-    language_code = "zh"  # See http://g.co/cloud/speech/docs/languages
-    config = speech.RecognitionConfig(
-        encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-        sample_rate_hertz=RATE,
-        audio_channel_count=1,
-        language_code=language_code,
-        model='default',
-        enable_automatic_punctuation=True,
-    )
-
-    # def __init__(self):
-    #     super().__init__()
-    #     self.insert_pos = -1  # -1 means to insert text back to where cursor is
+    def __init__(self, config: Dict[str, str]):
+        super().__init__()
+        self.language_code = config.get("LANGUAGE", "en")  # See https://cloud.google.com/speech-to-text/docs/languages
+        self.config = speech.RecognitionConfig(
+            encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+            sample_rate_hertz=RATE,
+            audio_channel_count=1,
+            language_code=self.language_code,
+            model='default',
+            enable_automatic_punctuation=True,
+        )
 
     def run(self):
         asyncio.run(self._run())
 
     def stop(self) -> None:
-        """
-        called from the main GUI thread
-        :param current_pos: current cursor position of text editor
+        """Called from the main GUI thread
         """
         def cleanup():
             self.progress.emit(self.TO_FINISH_PLACE_HOLDER, True)
@@ -145,11 +140,11 @@ class AudioTranscriber(QObject):
         self.loop.call_soon_threadsafe(cleanup)
 
     async def _run(self) -> None:
-        """Core method. start recording and transcribe audio into text. """
+        """Core method. start recording and transcribing audio into text. """
         audio_buffer: queue.Queue[bytes] = queue.Queue()  # audio data buffer
         text_queue: asyncio.Queue[str] = asyncio.Queue()  # transcribed text from audio
 
-        def _callback(text):  # for _transcriber to write back
+        def _callback(text):  # for _transcriber thread to write back
             self.loop.call_soon_threadsafe(text_queue.put_nowait,
                                            copy.copy(text) if text is not None else None)
 
@@ -167,8 +162,8 @@ class AudioTranscriber(QObject):
                  ],
                 return_when=asyncio.ALL_COMPLETED
             )
-        self.finished.emit()
         logging.debug('Transcriber is done and stopping.')
+        self.finished.emit()
 
     async def _copier(self, text_queue: asyncio.Queue[str]) -> None:
         while text := await text_queue.get():
@@ -187,16 +182,16 @@ class AudioTranscriber(QObject):
                     audio = speech.RecognitionAudio(content=content)
 
                     logging.debug(f"start streaming recognize at {datetime.now().strftime('%H:%M:%S.%f')}")
-                    #response = client.recognize(config=self.config, audio=audio)
-                    time.sleep(3)
-                    callback("hello world....")
+                    response = client.recognize(config=self.config, audio=audio)
+                    # time.sleep(3)
+                    # callback("hello world....")
 
                     # Now, put the transcription responses to use.
-                    # logging.debug(f"start printing responses at {datetime.now().strftime('%H:%M:%S.%f')}")
-                    # if response.results:
-                    #     result = response.results[0]
-                    #     if result.alternatives:
-                    #         callback(result.alternatives[0].transcript)
+                    logging.debug(f"start printing responses at {datetime.now().strftime('%H:%M:%S.%f')}")
+                    if response.results:
+                        result = response.results[0]
+                        if result.alternatives:
+                            callback(result.alternatives[0].transcript)
             finally:
                 logging.debug(f"stopping transcribing audio data")
                 callback(None)

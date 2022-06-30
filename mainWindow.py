@@ -23,6 +23,7 @@ class MainWindow(QMainWindow):
         self._init_configs(config)
         self._init_widgets()
         self._load_content()
+        self.config = config
 
     def _init_configs(self, config):
         """Read configurations from the config file.
@@ -220,7 +221,7 @@ class MainWindow(QMainWindow):
         self.stack_layout.setCurrentWidget(self.label)
 
         self.transcribe_thread = QThread()
-        self.worker = AudioTranscriber()
+        self.worker = AudioTranscriber(self.config)
         self.worker.moveToThread(self.transcribe_thread)
 
         self.transcribe_thread.started.connect(self.worker.run)

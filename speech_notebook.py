@@ -25,6 +25,8 @@ def main():
                 line = line.strip()
                 if not line:
                     continue
+                if '#' in line:
+                    line, _ = line.split('#', 1)  # remove trailing comment.
                 if '=' not in line:
                     raise ValueError(f"Invalid config item read: {line}")
                 key, value = line.split('=', 1)

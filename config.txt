@@ -8,9 +8,13 @@ WINDOW_SIZE=800, 600
 # size of font. must be between 8 and 30
 FONT_SIZE=16
 
+# UI text
 MESSAGE.CONTENT_MODIFIED=content modified
 MESSAGE.CONTENT_SAVED=content saved
 MESSAGE.TO_RECORD_HINT=Press and hold to record
 MESSAGE.IN_PROGRESS_HINT=Recording and transcribing in process
 MESSAGE.TRANSCRIBE_TO_FINISH_HINT=Transcribing still in process, please wait ...
 MESSAGE.RECORDING=recording
+
+# Audio recording parameters
+LANGUAGE=en  # See https://cloud.google.com/speech-to-text/docs/languages for languages supported
