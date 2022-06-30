@@ -95,7 +95,8 @@ class MainWindow(QMainWindow):
         self.worker = None
         self.recording = False
 
-    def _load_content(self):
+    def _load_content(self) -> None:
+        """Load auto saved content into the text editor on start. """
         workspace_file = Path(self.WORKSPACE_FILE)
         if workspace_file.is_file():
             with open(workspace_file, 'r') as f:
@@ -105,49 +106,81 @@ class MainWindow(QMainWindow):
             # set cursor to end of content
             self.text_edit.moveCursor(QTextCursor.MoveOperation.End)
 
-    def _write_back(self, text, html=False):
+    def _write_back(self, text: str, html: bool = False) -> None:
+        """
+        For transcriber to write back transcribed text into the text editor.
+
+        :param text: transcribed text to be inserted into text editor.
+        :param html: is the text HTML or plain text?
+        """
         if self.recording:
             self.text_edit.insertPlainText(text)
             return
 
+        # This is for the transcriber to insert a to-finish placeholder tag.
+        # so that later the transcribed text can be inserted into the right place.
         if not self.recording and html:
             self.text_edit.insertHtml(text)
             return
 
-        # now insert to document which the cursor may have moved away
+        # When user releases the recording button and returns to the text editor,
+        # the cursor could have moved away from where the transcribed text should be inserted into
+        # when this method is called.
+        # We want to insert into the right place while preserving the cursor position.
         current_pos = self.text_edit.textCursor().position()
         doc_html = self.text_edit.document().toHtml()
-        to_finish_tag_idx = doc_html.index("<span style=")
-        before_tag_html = doc_html[:to_finish_tag_idx]
-        new_html = ''.join((before_tag_html, text, doc_html[to_finish_tag_idx:]))
-        self.text_edit.setHtml(new_html)
+        try:
+            to_finish_tag_idx = doc_html.index("<span style=")
+            before_tag_html = doc_html[:to_finish_tag_idx]
+            new_html = ''.join((before_tag_html, text, doc_html[to_finish_tag_idx:]))
+            self.text_edit.setHtml(new_html)
+        except ValueError as ve:
+            logging.error(f"cannot locate the to-finish tag to insert transcribed text: {ve}")
+            self.text_edit.insertPlainText(text)  # insert where the cursor is
+            return
 
-        start = before_tag_html.index("</head><body")
-        before_tag_text = re.sub("<[^>]+>", "", before_tag_html[start:])
-        cursor = self.text_edit.textCursor()
-        cursor.setPosition(current_pos + len(text) if current_pos > len(before_tag_text) else current_pos)
-        self.text_edit.setTextCursor(cursor)
+        # now try to set the cursor back to the original place
+        try:
+            start = before_tag_html.index("</head><body")
+            before_tag_text = re.sub("<[^>]+>", "", before_tag_html[start:])
+            cursor = self.text_edit.textCursor()
+            cursor.setPosition(current_pos + len(text) if current_pos > len(before_tag_text) else current_pos)
+            self.text_edit.setTextCursor(cursor)
+        except ValueError as ve:
+            logging.error(f"cannot locate the start of HTML content. {ve}")
+            pass
 
-    def _enable_recording(self):
+    def _enable_recording(self) -> None:
+        """Called when the transcriber has transcribed all the voice data and is terminating. """
+        self._cleanup_tags()
         self.record_btn.setEnabled(True)
         self.record_btn.setText(self.MESSAGES['to_record'])
-        self._cleanup_tags()
 
-    def _cleanup_tags(self):
-        """remove to_finish tag"""
+    def _cleanup_tags(self, preserve_cursor: bool = True) -> None:
+        """Remove the to-finish tag for the transcriber.
+        There should only be at most one such tag at a time.
+        """
+
+        # Remove the to-finish tag
         cursor = self.text_edit.textCursor()
         current_pos = cursor.position()
         doc_html = self.text_edit.document().toHtml()
-
-        to_finish_tag_idx = doc_html.index("<span style=")
-        before_tag_html = doc_html[:to_finish_tag_idx]
-        start = before_tag_html.index("</head><body")
-        before_tag_text = re.sub("<[^>]+>", "", before_tag_html[start:])
-
         content = re.sub("<span style=.+</span>", "", doc_html)
-        self.text_edit.setHtml(content)
-        cursor.setPosition(current_pos - 3 if current_pos > len(before_tag_text) else current_pos)  # 3 is the length of '...'
-        self.text_edit.setTextCursor(cursor)
+        self.text_edit.setHtml(content)  # cursor is at beginning after setting the content.
+
+        # try to preserve the cursor position
+        if preserve_cursor:
+            try:
+                to_finish_tag_idx = doc_html.index("<span style=")
+                before_tag_html = doc_html[:to_finish_tag_idx]
+                start = before_tag_html.index("</head><body")
+                before_tag_text = re.sub("<[^>]+>", "", before_tag_html[start:])
+
+                # 3 is the length of '...'
+                cursor.setPosition(current_pos - 3 if current_pos > len(before_tag_text) else current_pos)
+                self.text_edit.setTextCursor(cursor)
+            except ValueError:  # tag not found
+                pass
 
     def start_recording(self):
         """Start recording voice. """
@@ -187,6 +220,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         """Handle window close event. """
         super().closeEvent(event)
+        self._cleanup_tags(False)  # clean up tags just in case.
         with open(self.WORKSPACE_FILE, 'w') as f:
             f.write(self.text_edit.toPlainText())
 
