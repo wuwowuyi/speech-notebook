@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 from PyQt6.QtCore import QSize, Qt, QThread
-from PyQt6.QtGui import QIcon, QTextCursor, QAction, QKeySequence
+from PyQt6.QtGui import QIcon, QTextCursor, QAction, QKeySequence, QFont
 from PyQt6.QtWidgets import QMainWindow, QToolBar, QStatusBar, QVBoxLayout, QWidget, QTextEdit, \
     QPushButton, QStackedLayout, QLabel, QFileDialog
 
@@ -18,17 +18,43 @@ from audio_transcribe import AudioTranscriber
 
 class MainWindow(QMainWindow):
 
-    def __init__(self, config: Dict[str, ...]):
+    def __init__(self, config: Dict[str, str]):
         super().__init__()
         self._init_configs(config)
         self._init_widgets()
         self._load_content()
 
     def _init_configs(self, config):
+        """Read configurations from the config file.
+        Use the default value if a configuration item is invalid or not set. """
+
         # default file to save when the application is closed
-        self.WORKSPACE_FILE = config.get('WORKSPACE_FILE', 'recordings.txt')
-        self.INITIAL_SIZE = config.get('WINDOW_SIZE', (800, 500))
+        filename = config.get('WORKSPACE_FILE', 'recordings.txt').lower()
+        if not filename.endswith('.txt'):  # only allow .txt file
+            self.WORKSPACE_FILE = '.'.join((re.sub('\.', '-', filename), 'txt'))
+        else:
+            self.WORKSPACE_FILE = filename
+
+        # initial window size
+        initial_size = config.get('WINDOW_SIZE', "800,600")
+        try:
+            width, height = initial_size.split(',', 1)
+            self.INITIAL_SIZE = (int(width.strip()), int(height.strip()))
+        except ValueError as ve:
+            logging.error("Error in initializing window size", ve)
+            self.INITIAL_SIZE = (800, 600)  # use
+
         self.FILE_FILTER = ("text/plain", "text/html")
+
+        # init font size
+        try:
+            font_size = int(config.get('FONT_SIZE', 16))
+            if font_size > 30 or font_size < 8:
+                raise ValueError("font size must be between 8 and 30.")
+            self.FONT_SIZE = font_size
+        except ValueError as ve:
+            logging.error("Error in initializing font size", ve)
+            self.FONT_SIZE = 16
 
         self.MESSAGES = {
             'modified': config.get('MESSAGE.CONTENT_MODIFIED', 'content modified'),
@@ -36,6 +62,7 @@ class MainWindow(QMainWindow):
             'to_record': config.get('MESSAGE.TO_RECORD_HINT', 'Press and hold to record'),
             'recording': config.get('MESSAGE.IN_PROGRESS_HINT', 'Recording and transcribing in process'),
             'to_finish': config.get('MESSAGE.TRANSCRIBE_TO_FINISH_HINT', 'Transcribing still in process, please wait ...'),
+            'recording': config.get('MESSAGE.RECORDING', 'recording'),
         }
 
     def _init_widgets(self):
@@ -80,7 +107,7 @@ class MainWindow(QMainWindow):
         self.stack_layout.addWidget(self.text_edit)
         self.text_edit.textChanged.connect(self.set_tosave_status)
 
-        self.label = QLabel("Recording")
+        self.label = QLabel(self.MESSAGES['recording'])
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stack_layout.addWidget(self.label)
 
@@ -94,6 +121,10 @@ class MainWindow(QMainWindow):
         self.transcribe_thread = None
         self.worker = None
         self.recording = False
+
+        font = QFont()
+        font.setPointSize(self.FONT_SIZE)
+        self.text_edit.setFont(font)  # zoom throws warnings after setting font
 
     def _load_content(self) -> None:
         """Load auto saved content into the text editor on start. """

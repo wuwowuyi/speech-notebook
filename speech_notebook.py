@@ -18,14 +18,17 @@ def main():
     # load configurations
     config = {}
     if os.path.isfile(CONFIG_FILE):
-        with open(CONFIG_FILE, 'r') as config:
-            for line in config.readline():
+        with open(CONFIG_FILE, 'r') as f:
+            for line in f:
                 if line.startswith('#'):
                     continue
+                line = line.strip()
+                if not line:
+                    continue
                 if '=' not in line:
-                    raise ValueError('Invalid config item read.')
+                    raise ValueError(f"Invalid config item read: {line}")
                 key, value = line.split('=', 1)
-                config[key.upper()] = value
+                config[key.strip().upper()] = value.strip()
 
     app = QApplication(sys.argv)
     if 'Fusion' in QStyleFactory.keys():
@@ -37,9 +40,9 @@ def main():
 
 
 if __name__ == '__main__':
-    credentials = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS', '')
-    if not credentials:
-        print('Must define environment variable GOOGLE_APPLICATION_CREDENTIALS')
-        sys.exit(-1)
+    # credentials = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS', '')
+    # if not credentials:
+    #     print('Must define environment variable GOOGLE_APPLICATION_CREDENTIALS')
+    #     sys.exit(-1)
     main()
 
