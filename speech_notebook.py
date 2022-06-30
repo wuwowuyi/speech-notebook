@@ -2,6 +2,7 @@ import logging
 import os.path
 import sys
 
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QStyleFactory
 
 from mainWindow import MainWindow
@@ -35,6 +36,8 @@ def main():
     app = QApplication(sys.argv)
     if 'Fusion' in QStyleFactory.keys():
         app.setStyle('Fusion')  # Fusion is available on Windows, Mac, and Linux.
+
+    app.setWindowIcon(QIcon("resources/app-icon.png"))
 
     window = MainWindow(config)
     window.show()
