@@ -30,14 +30,14 @@ class MainWindow(QMainWindow):
         Use the default value if a configuration item is invalid or not set. """
 
         # default file to save when the application is closed
-        filename = config.get('WORKSPACE_FILE', 'recordings.txt').lower()
+        filename = config.pop('WORKSPACE_FILE', 'recordings.txt').lower()
         if not filename.endswith('.txt'):  # only allow .txt file
             self.WORKSPACE_FILE = '.'.join((re.sub('\.', '-', filename), 'txt'))
         else:
             self.WORKSPACE_FILE = filename
 
         # initial window size
-        initial_size = config.get('WINDOW_SIZE', "800,600")
+        initial_size = config.pop('WINDOW_SIZE', "800,600")
         try:
             width, height = initial_size.split(',', 1)
             self.INITIAL_SIZE = (int(width.strip()), int(height.strip()))
@@ -49,7 +49,7 @@ class MainWindow(QMainWindow):
 
         # init font size
         try:
-            font_size = int(config.get('FONT_SIZE', 16))
+            font_size = int(config.pop('FONT_SIZE', 16))
             if font_size > 30 or font_size < 8:
                 raise ValueError("font size must be between 8 and 30.")
             self.FONT_SIZE = font_size
@@ -58,12 +58,12 @@ class MainWindow(QMainWindow):
             self.FONT_SIZE = 16
 
         self.MESSAGES = {
-            'modified': config.get('MESSAGE.CONTENT_MODIFIED', 'content modified'),
-            'saved': config.get('MESSAGE.CONTENT_SAVED', 'content saved'),
-            'to_record': config.get('MESSAGE.TO_RECORD_HINT', 'Press and hold to record'),
-            'recording': config.get('MESSAGE.IN_PROGRESS_HINT', 'Recording and transcribing in process'),
-            'to_finish': config.get('MESSAGE.TRANSCRIBE_TO_FINISH_HINT', 'Transcribing still in process, please wait ...'),
-            'recording': config.get('MESSAGE.RECORDING', 'recording'),
+            'modified': config.pop('MESSAGE.CONTENT_MODIFIED', 'content modified'),
+            'saved': config.pop('MESSAGE.CONTENT_SAVED', 'content saved'),
+            'to_record': config.pop('MESSAGE.TO_RECORD_HINT', 'Press and hold to record'),
+            'recording': config.pop('MESSAGE.IN_PROGRESS_HINT', 'Recording and transcribing in process'),
+            'to_finish': config.pop('MESSAGE.TRANSCRIBE_TO_FINISH_HINT', 'Transcribing still in process, please wait ...'),
+            'recording': config.pop('MESSAGE.RECORDING', 'recording'),
         }
 
     def _init_widgets(self):

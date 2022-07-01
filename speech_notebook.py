@@ -33,11 +33,17 @@ def main():
                 key, value = line.split('=', 1)
                 config[key.strip().upper()] = value.strip()
 
+    # set the GOOGLE_APPLICATION_CREDENTIALS environment variable
+    google_service_account_key = config.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
+    if google_service_account_key is None:
+        print("Must provide path to the JSON file that contains your Google service account key.")
+        sys.exit(-1)
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"]=google_service_account_key
+
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon("resources/app-icon.png"))
     if 'Fusion' in QStyleFactory.keys():
         app.setStyle('Fusion')  # Fusion is available on Windows, Mac, and Linux.
-
-    app.setWindowIcon(QIcon("resources/app-icon.png"))
 
     window = MainWindow(config)
     window.show()
@@ -45,9 +51,5 @@ def main():
 
 
 if __name__ == '__main__':
-    # credentials = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS', '')
-    # if not credentials:
-    #     print('Must define environment variable GOOGLE_APPLICATION_CREDENTIALS')
-    #     sys.exit(-1)
     main()
 

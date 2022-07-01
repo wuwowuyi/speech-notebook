@@ -1,3 +1,6 @@
+# Google Cloud service account key file
+# GOOGLE_APPLICATION_CREDENTIALS=/path/to/your-key.json
+GOOGLE_APPLICATION_CREDENTIALS=
 
 # file to save on exit. must be a .txt file
 WORKSPACE_FILE=recordings.txt
