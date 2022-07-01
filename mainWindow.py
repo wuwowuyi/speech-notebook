@@ -6,7 +6,7 @@ import re
 import time
 from pathlib import Path
 
-from PyQt6.QtCore import QSize, Qt, QThread
+from PyQt6.QtCore import QSize, Qt, QThread, QTimer
 from PyQt6.QtGui import QIcon, QTextCursor, QAction, QKeySequence, QFont
 from PyQt6.QtWidgets import QMainWindow, QToolBar, QStatusBar, QVBoxLayout, QWidget, QTextEdit, \
     QPushButton, QStackedLayout, QLabel, QFileDialog
@@ -108,9 +108,14 @@ class MainWindow(QMainWindow):
         self.stack_layout.addWidget(self.text_edit)
         self.text_edit.textChanged.connect(self.set_tosave_status)
 
-        self.label = QLabel(self.MESSAGES['recording'])
+        self.label = QLabel()
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stack_layout.addWidget(self.label)
+        font = QFont()
+        font.setPointSize(20)
+        self.label.setFont(font)
+        self.timer = QTimer()
+        self.timer.timeout.connect(self._update_label)
 
         # set up the record button
         self.record_btn = QPushButton(QIcon('resources/speaker-volume.png'), self.MESSAGES['to_record'], self)
@@ -238,9 +243,14 @@ class MainWindow(QMainWindow):
         self.transcribe_thread.finished.connect(self._enable_recording)
         # do not disable the button here otherwise it would terminate the recording thread.
 
+        # setup a timer to show recording duration
+        self.label.setText(f"{self.MESSAGES['recording']} 0 seconds")
+        self.timer.start(1000)
+
     def stop_recording(self):
         """Stop recording and insert transcribed text into editor. """
         self.recording = False
+        self.timer.stop()
         if self.worker:
             self.worker.stop()
 
@@ -248,6 +258,12 @@ class MainWindow(QMainWindow):
         self.record_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.record_btn.setText(self.MESSAGES['to_finish'])
         self.record_btn.setEnabled(False)
+
+    def _update_label(self):
+        text = self.label.text()
+        start = len(self.MESSAGES['recording']) + 1
+        duration = int(text[start:].split(' ', 1)[0])
+        self.label.setText(f"{self.MESSAGES['recording']} {duration + 1} seconds")
 
     def closeEvent(self, event):
         """Handle window close event. """
