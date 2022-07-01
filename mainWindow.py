@@ -11,9 +11,7 @@ from PyQt6.QtGui import QIcon, QTextCursor, QAction, QKeySequence, QFont
 from PyQt6.QtWidgets import QMainWindow, QToolBar, QStatusBar, QVBoxLayout, QWidget, QTextEdit, \
     QPushButton, QStackedLayout, QLabel, QFileDialog
 
-
-# TODO:  connect clean-up code to the aboutToQuit() signal, instead of putting it in your application’s main() function
-from audio_transcribe import AudioTranscriber
+from Transcriber import AudioTranscriber
 
 
 class MainWindow(QMainWindow):
