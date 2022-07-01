@@ -40,7 +40,7 @@ class MainWindow(QMainWindow):
             width, height = initial_size.split(',', 1)
             self.INITIAL_SIZE = (int(width.strip()), int(height.strip()))
         except ValueError as ve:
-            logging.error("Error in initializing window size", ve)
+            logging.warning("Invalid window size", ve)
             self.INITIAL_SIZE = (800, 600)  # use
 
         self.FILE_FILTER = ("text/plain", "text/html")
@@ -52,7 +52,7 @@ class MainWindow(QMainWindow):
                 raise ValueError("font size must be between 8 and 30.")
             self.FONT_SIZE = font_size
         except ValueError as ve:
-            logging.error("Error in initializing font size", ve)
+            logging.warning("Invalid font size", ve)
             self.FONT_SIZE = 16
 
         self.MESSAGES = {
@@ -100,12 +100,12 @@ class MainWindow(QMainWindow):
         widget.setLayout(self.main_layout)
         self.setCentralWidget(widget)
 
-        # config to support:
-        # font size, font style
+        # main widget is the text editor.
         self.text_edit = QTextEdit()
         self.stack_layout.addWidget(self.text_edit)
         self.text_edit.textChanged.connect(self.set_tosave_status)
 
+        # label widget covering the text editor when recording.
         self.label = QLabel()
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stack_layout.addWidget(self.label)
@@ -131,7 +131,7 @@ class MainWindow(QMainWindow):
         self.text_edit.setFont(font)  # zoom throws warnings after setting font
 
     def _load_content(self) -> None:
-        """Load auto saved content into the text editor on start. """
+        """Load auto saved content into the text editor on application start. """
         workspace_file = Path(self.WORKSPACE_FILE)
         if workspace_file.is_file():
             with open(workspace_file, 'r') as f:

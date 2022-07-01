@@ -2,7 +2,6 @@ from __future__ import annotations
 from typing import *
 
 import functools
-import time
 
 import asyncio
 import copy
@@ -25,7 +24,7 @@ MAX_LENGTH_PER_REQUEST = 15
 
 
 class MicrophoneStream:
-    """Opens a recording stream as a generator yielding the audio chunks."""
+    """Opens a recording stream and store the audio chunks in an output buffer."""
 
     def __init__(self, rate: int, chunk: int, out_buff: queue.Queue[bytes]):
         self._rate = rate
@@ -50,7 +49,6 @@ class MicrophoneStream:
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        # TODO: parameters, deal with exceptions
         self._audio_stream.stop_stream()
         self._audio_stream.close()
         self._audio_interface.terminate()
@@ -61,8 +59,7 @@ class MicrophoneStream:
         self._in_buff.put_nowait(None)
 
     def _fill_buffer(self, loop, in_data: bytes, frame_count: int, time_info: Mapping[str, float],
-                     status_flags: int) -> (
-            None, int):
+                     status_flags: int) -> (None, int):
         """Call back function to continuously collect data from the audio stream into the buffer.
         This will be called from the Microphone recording thread.
 
@@ -99,7 +96,7 @@ class MicrophoneStream:
                 length += duration
                 if MAX_LENGTH_PER_REQUEST - length < CHUNK_DURATION * 2:
                     logging.debug(
-                        f"yield data and return at {datetime.now().strftime('%H:%M:%S')}, the length is {length}")  # TODO, log debug
+                        f"yield data at {datetime.now().strftime('%H:%M:%S')}, the duration is {length}")
                     # stop reading data from buffer.
                     self._out_buff.put(copy.copy(data))
                     data = b""
@@ -171,6 +168,7 @@ class AudioTranscriber(QObject):
             self.progress.emit(text, False)
 
     def _transcribe(self, audio_buff: queue.Queue[bytes], callback: Callable[[str], None]):
+        """Call Google speech API to transcribe audio data into text. """
         logging.debug(f"\nTranscribe thread started at {datetime.now().strftime('%H:%M:%S')}")
         with speech.SpeechClient() as client:
             try:
@@ -180,7 +178,6 @@ class AudioTranscriber(QObject):
                         break
 
                     audio = speech.RecognitionAudio(content=content)
-
                     logging.debug(f"start streaming recognize at {datetime.now().strftime('%H:%M:%S.%f')}")
                     response = client.recognize(config=self.config, audio=audio)
                     # time.sleep(3)

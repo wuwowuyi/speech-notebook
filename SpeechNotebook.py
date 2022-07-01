@@ -8,14 +8,11 @@ from PyQt6.QtWidgets import QApplication, QStyleFactory
 from mainWindow import MainWindow
 
 
-CONFIG_FILE = 'config.txt'
+CONFIG_FILE = 'config.txt'  # configuration file
+LOG_FILE = 'speech_notebook.log'
 
 
 def main():
-    logging.basicConfig(filename='speech_notebook.log', level=logging.DEBUG)
-    logging.debug("\n\n")
-    logging.debug("*" * 100)
-
     # load configurations
     config = {}
     if os.path.isfile(CONFIG_FILE):
@@ -38,7 +35,11 @@ def main():
     if google_service_account_key is None:
         print("Must provide path to the JSON file that contains your Google service account key.")
         sys.exit(-1)
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"]=google_service_account_key
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = google_service_account_key
+
+    if os.environ.get('DEBUG', 'False').lower() == 'true':
+        logging.basicConfig(filename=LOG_FILE, level=logging.DEBUG)
+        logging.debug("\n *" * 100)
 
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon("resources/app-icon.png"))
