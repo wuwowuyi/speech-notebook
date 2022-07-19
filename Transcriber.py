@@ -85,7 +85,7 @@ class MicrophoneStream:
         """Called to read audio data from microphone into output buffer. """
         logging.debug(f"\nData generation started at {datetime.now().strftime('%H:%M:%S')}")
         length = 0  # in seconds
-        data = b""
+        data = bytearray()
         try:
             while True:
                 item = await self._in_buff.get()
@@ -98,13 +98,13 @@ class MicrophoneStream:
                     logging.debug(
                         f"yield data at {datetime.now().strftime('%H:%M:%S')}, the duration is {length}")
                     # stop reading data from buffer.
-                    self._out_buff.put(copy.copy(data))
-                    data = b""
+                    self._out_buff.put(bytes(data))
+                    data.clear()
                     length = 0
         finally:
             if length > 0:
                 logging.debug('yield remaining data block')
-                self._out_buff.put(copy.copy(data))
+                self._out_buff.put(bytes(data))
             self._out_buff.put(None)
 
 
