@@ -11,16 +11,16 @@ from datetime import datetime
 
 import pyaudio
 from PyQt6.QtCore import QObject, pyqtSignal
-from google.cloud import speech
 
 # Audio recording parameters
+# A frame is a set of samples that occur simultaneously. For a stereo stream, a frame is two samples.
 RATE = 16000  # sampling rate, the number of frames per second
 CHUNK = 1024  # frames per buffer.
 CHUNK_DURATION = CHUNK / RATE  # the duration of a chunk
 
 # Google charges each request rounded up to the nearest increment of 15 seconds
 # We limit each request no more than but close to 15 seconds
-MAX_LENGTH_PER_REQUEST = 15
+MAX_LENGTH_PER_REQUEST = 30
 
 
 class MicrophoneStream:
@@ -30,19 +30,20 @@ class MicrophoneStream:
         self._rate = rate
         self._chunk = chunk
         self._closed = True  # stream status flag
-        self._in_buff: asyncio.Queue[bytes] = asyncio.Queue()  # in audio from microphone
-        self._out_buff = out_buff  # out audio to transcribe
+        self._in_buff: asyncio.Queue[bytes] = asyncio.Queue()  # in audio bytes from microphone
+        self._out_buff = out_buff  # out audio bytes buffer
 
     def __enter__(self):
         loop = asyncio.get_running_loop()
-        self._audio_interface = pyaudio.PyAudio()
-        self._audio_stream = self._audio_interface.open(
-            format=pyaudio.paInt16,
-            channels=1,
-            rate=self._rate,
-            input=True,
-            output=False,
-            frames_per_buffer=self._chunk,
+        # documentation https://people.csail.mit.edu/hubert/pyaudio/docs/#pyaudio.PyAudio.Stream.__init__
+        self._pyaudio = pyaudio.PyAudio()
+        self._audio_stream = self._pyaudio.open(
+            format=pyaudio.paInt16,  # Sampling size and format
+            channels=1,  # Number of channels
+            rate=self._rate,  # Sampling rate
+            input=True,  # Specifies whether this is an input stream
+            output=False,  # Specifies whether this is an output stream.
+            frames_per_buffer=self._chunk,  # Specifies the number of frames per buffer
             stream_callback=functools.partial(self._fill_buffer, loop),
         )
         self._closed = False
@@ -51,10 +52,10 @@ class MicrophoneStream:
     def __exit__(self, exc_type, exc_value, traceback):
         self._audio_stream.stop_stream()
         self._audio_stream.close()
-        self._audio_interface.terminate()
+        self._pyaudio.terminate()
         self._closed = True
 
-    def stop(self):
+    def stop(self) -> None:
         logging.debug('stopping microphone...')
         self._in_buff.put_nowait(None)
 
@@ -64,7 +65,7 @@ class MicrophoneStream:
         This will be called from the Microphone recording thread.
 
         see http://people.csail.mit.edu/hubert/pyaudio/docs/#pyaudio.Stream.__init__
-        for the signature of a callback function.
+        for the signature of callback function.
         frame_count equals the buffer size.
         During a normal recording, the observed value of status_flag is paContinue.
         """
@@ -81,7 +82,7 @@ class MicrophoneStream:
         loop.call_soon_threadsafe(self._in_buff.put_nowait, (copy.copy(in_data), duration))
         return None, pyaudio.paContinue
 
-    async def generate(self):
+    async def collect(self) -> None:
         """Called to read audio data from microphone into output buffer. """
         logging.debug(f"\nData generation started at {datetime.now().strftime('%H:%M:%S')}")
         length = 0  # in seconds
@@ -92,12 +93,13 @@ class MicrophoneStream:
                 if item is None:
                     break
                 chunk, duration = item
-                data += chunk
+                data.extend(chunk)
                 length += duration
-                if MAX_LENGTH_PER_REQUEST - length < CHUNK_DURATION * 2:
+
+                # no more space for another chunk, yield data
+                if MAX_LENGTH_PER_REQUEST - length <= CHUNK_DURATION:
                     logging.debug(
                         f"yield data at {datetime.now().strftime('%H:%M:%S')}, the duration is {length}")
-                    # stop reading data from buffer.
                     self._out_buff.put(bytes(data))
                     data.clear()
                     length = 0
@@ -115,15 +117,7 @@ class AudioTranscriber(QObject):
 
     def __init__(self, config: Dict[str, str]):
         super().__init__()
-        self.language_code = config.get("LANGUAGE", "en")  # See https://cloud.google.com/speech-to-text/docs/languages
-        self.config = speech.RecognitionConfig(
-            encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-            sample_rate_hertz=RATE,
-            audio_channel_count=1,
-            language_code=self.language_code,
-            model='default',
-            enable_automatic_punctuation=True,
-        )
+        self.language_code = config.get("LANGUAGE", "en")
 
     def run(self):
         asyncio.run(self._run())
@@ -131,36 +125,38 @@ class AudioTranscriber(QObject):
     def stop(self) -> None:
         """Called from the main GUI thread
         """
+
         def cleanup():
             self.progress.emit(self.TO_FINISH_PLACE_HOLDER, True)
             self.stream.stop()
+
         self.loop.call_soon_threadsafe(cleanup)
 
     async def _run(self) -> None:
         """Core method. start recording and transcribing audio into text. """
-        audio_buffer: queue.Queue[bytes] = queue.Queue()  # audio data buffer
-        text_queue: asyncio.Queue[str] = asyncio.Queue()  # transcribed text from audio
+        audio_buffer: queue.Queue[bytes] = queue.Queue()  # audio data out buffer
+        text_queue: asyncio.Queue[str] = asyncio.Queue()  # transcribed text out buffer
 
         def _callback(text):  # for _transcriber thread to write back
             self.loop.call_soon_threadsafe(text_queue.put_nowait,
-                                           copy.copy(text) if text is not None else None)
+                                           copy.copy(text) if not text else None)
 
         self.loop = asyncio.get_running_loop()
         self.stream = MicrophoneStream(RATE, CHUNK, audio_buffer)
         with self.stream:
-            audio_generator = asyncio.create_task(self.stream.generate())
-            transcriber = asyncio.create_task(asyncio.to_thread(self._transcribe, audio_buffer, _callback))
+            audio_generator = asyncio.create_task(self.stream.collect())
+            transcriber = self.loop.run_in_executor(self._transcribe, audio_buffer, _callback)
             copier = asyncio.create_task(self._copier(text_queue))
 
-            await asyncio.wait(
-                [audio_generator,  # open microphone and collect audio data
-                 transcriber,  # transcribe audio into text
-                 copier,  # read transcribed text
-                 ],
+            await asyncio.wait((
+                audio_generator,  # open microphone and collect audio data
+                transcriber,  # transcribe audio into text
+                copier,  # read transcribed text
+            ),
                 return_when=asyncio.ALL_COMPLETED
             )
-        logging.debug('Transcriber is done and stopping.')
         self.finished.emit()
+        logging.debug('Transcriber is done and stopping.')
 
     async def _copier(self, text_queue: asyncio.Queue[str]) -> None:
         while text := await text_queue.get():
@@ -170,25 +166,4 @@ class AudioTranscriber(QObject):
     def _transcribe(self, audio_buff: queue.Queue[bytes], callback: Callable[[str], None]):
         """Call Google speech API to transcribe audio data into text. """
         logging.debug(f"\nTranscribe thread started at {datetime.now().strftime('%H:%M:%S')}")
-        with speech.SpeechClient() as client:
-            try:
-                while True:
-                    content = audio_buff.get(timeout=MAX_LENGTH_PER_REQUEST)  # wait for data. blocking
-                    if content is None:
-                        break
-
-                    audio = speech.RecognitionAudio(content=content)
-                    logging.debug(f"start streaming recognize at {datetime.now().strftime('%H:%M:%S.%f')}")
-                    response = client.recognize(config=self.config, audio=audio)
-                    # time.sleep(3)
-                    # callback("hello world....")
-
-                    # Now, put the transcription responses to use.
-                    logging.debug(f"start printing responses at {datetime.now().strftime('%H:%M:%S.%f')}")
-                    if response.results:
-                        result = response.results[0]
-                        if result.alternatives:
-                            callback(result.alternatives[0].transcript)
-            finally:
-                logging.debug(f"stopping transcribing audio data")
-                callback(None)
+        # to finish

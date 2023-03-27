@@ -5,11 +5,11 @@ import sys
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QStyleFactory
 
-from mainWindow import MainWindow
+from mainwindow import MainWindow
 
 
 CONFIG_FILE = 'config.txt'  # configuration file
-LOG_FILE = 'speech_notebook.log'
+LOG_FILE = 'voice_notebook.log'
 
 
 def main():
@@ -30,16 +30,9 @@ def main():
                 key, value = line.split('=', 1)
                 config[key.strip().upper()] = value.strip()
 
-    # set the GOOGLE_APPLICATION_CREDENTIALS environment variable
-    google_service_account_key = config.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
-    if google_service_account_key is None:
-        print("Must provide path to the JSON file that contains your Google service account key.")
-        sys.exit(-1)
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = google_service_account_key
-
-    if os.environ.get('DEBUG', 'False').lower() == 'true':
+    if os.environ.get('PYTHONASYNCIODEBUG', '0') == '1':
         logging.basicConfig(filename=LOG_FILE, level=logging.DEBUG)
-        logging.debug("\n" + "*" * 100)
+        logging.debug("\n" + "*" * 100)  # to separate from previous log
 
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon("resources/app-icon.png"))

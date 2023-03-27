@@ -11,21 +11,21 @@ from PyQt6.QtGui import QIcon, QTextCursor, QAction, QKeySequence, QFont
 from PyQt6.QtWidgets import QMainWindow, QToolBar, QStatusBar, QVBoxLayout, QWidget, QTextEdit, \
     QPushButton, QStackedLayout, QLabel, QFileDialog
 
-from Transcriber import AudioTranscriber
+from transcriber import AudioTranscriber
 
 
 class MainWindow(QMainWindow):
 
     def __init__(self, config: Dict[str, str]):
         super().__init__()
-        self._init_configs(config)
+        self._window_config(config)
         self._init_widgets()
         self._load_content()
-        self.config = config
+        self.config = config  # for transcriber
 
-    def _init_configs(self, config):
+    def _window_config(self, config: Dict[str, str]) -> None:
         """Read configurations from the config file.
-        Use the default value if a configuration item is invalid or not set. """
+        Use the default value if a configuration item is invalid or unset. """
 
         # default file to save when the application is closed
         filename = config.pop('WORKSPACE_FILE', 'recordings.txt').lower()
@@ -41,9 +41,9 @@ class MainWindow(QMainWindow):
             self.INITIAL_SIZE = (int(width.strip()), int(height.strip()))
         except ValueError as ve:
             logging.warning("Invalid window size", ve)
-            self.INITIAL_SIZE = (800, 600)  # use
+            self.INITIAL_SIZE = (800, 600)  # use default
 
-        self.FILE_FILTER = ("text/plain", "text/html")
+        self.FILE_FILTER = ("text/plain", )
 
         # init font size
         try:
@@ -59,13 +59,13 @@ class MainWindow(QMainWindow):
             'modified': config.pop('MESSAGE.CONTENT_MODIFIED', 'content modified'),
             'saved': config.pop('MESSAGE.CONTENT_SAVED', 'content saved'),
             'to_record': config.pop('MESSAGE.TO_RECORD_HINT', 'Press and hold to record'),
-            'recording': config.pop('MESSAGE.IN_PROGRESS_HINT', 'Recording and transcribing in process'),
-            'to_finish': config.pop('MESSAGE.TRANSCRIBE_TO_FINISH_HINT', 'Transcribing still in process, please wait ...'),
-            'recording': config.pop('MESSAGE.RECORDING', 'recording'),
+            'to_finish': config.pop('MESSAGE.TRANSCRIBE_TO_FINISH_HINT',
+                                    'Transcribing still in process, please wait ...'),
+            'recording': config.pop('MESSAGE.RECORDING', 'Recording')
         }
 
     def _init_widgets(self):
-        self.setWindowTitle("Speech Notebook")
+        self.setWindowTitle("Voice Notebook")
         self.resize(*self.INITIAL_SIZE)
 
         # toolbar
@@ -83,11 +83,11 @@ class MainWindow(QMainWindow):
         self.save_action.triggered.connect(self.save_file)
         self.save_action.setShortcut(QKeySequence("Ctrl+s"))
         self.save_action.setEnabled(False)
-        self.isopenfile = False  # a flag used for updating status
         toolbar.addAction(self.save_action)
+        self.isopenfile = False  # a flag used for updating status
         self.filepath = ''  # path used last time a file was open or saved
 
-        # status bar
+        # status bar near bottom of window
         status_bar = QStatusBar(self)
         self.setStatusBar(status_bar)
         status_bar.setFixedHeight(30)
@@ -103,7 +103,7 @@ class MainWindow(QMainWindow):
         # main widget is the text editor.
         self.text_edit = QTextEdit()
         self.stack_layout.addWidget(self.text_edit)
-        self.text_edit.textChanged.connect(self.set_tosave_status)
+        self.text_edit.textChanged.connect(self.set_status_msg)
 
         # label widget covering the text editor when recording.
         self.label = QLabel()
@@ -116,7 +116,8 @@ class MainWindow(QMainWindow):
         self.timer.timeout.connect(self._update_label)
 
         # set up the record button
-        self.record_btn = QPushButton(QIcon('resources/speaker-volume.png'), self.MESSAGES['to_record'], self)
+        self.record_btn = QPushButton(QIcon('resources/speaker-volume.png'),
+                                      self.MESSAGES['to_record'], self)
         self.main_layout.addWidget(self.record_btn)
         self.record_btn.pressed.connect(self.start_recording)
         self.record_btn.released.connect(self.stop_recording)
@@ -230,8 +231,8 @@ class MainWindow(QMainWindow):
         self.worker.finished.connect(self.transcribe_thread.quit)
         self.worker.finished.connect(self.worker.deleteLater)
         self.transcribe_thread.finished.connect(self.transcribe_thread.deleteLater)
-
         self.worker.progress.connect(self._write_back)
+
         self.transcribe_thread.start()
         self.recording = True
 
@@ -295,7 +296,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(self.MESSAGES['saved'])
             self.save_action.setEnabled(False)
 
-    def set_tosave_status(self):
+    def set_status_msg(self):
         """Update save button status and the message in the status bar in bottom. """
         if not self.isopenfile:
             self.statusBar().showMessage(self.MESSAGES['modified'])
