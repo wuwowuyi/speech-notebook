@@ -1,13 +1,11 @@
 from __future__ import annotations
-from typing import *
 
 import logging
-import re
 import time
-from pathlib import Path
+from typing import *
 
 from PyQt6.QtCore import QSize, Qt, QThread, QTimer
-from PyQt6.QtGui import QIcon, QTextCursor, QAction, QKeySequence, QFont
+from PyQt6.QtGui import QIcon, QAction, QKeySequence, QFont
 from PyQt6.QtWidgets import QMainWindow, QToolBar, QStatusBar, QVBoxLayout, QWidget, QTextEdit, \
     QPushButton, QStackedLayout, QLabel, QFileDialog
 
