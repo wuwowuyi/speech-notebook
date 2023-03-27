@@ -39,7 +39,7 @@ def main():
 
     if os.environ.get('DEBUG', 'False').lower() == 'true':
         logging.basicConfig(filename=LOG_FILE, level=logging.DEBUG)
-        logging.debug("\n *" * 100)
+        logging.debug("\n" + "*" * 100)
 
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon("resources/app-icon.png"))

@@ -165,9 +165,8 @@ class MainWindow(QMainWindow):
         current_pos = self.text_edit.textCursor().position()
         doc_html = self.text_edit.document().toHtml()
         try:
-            to_finish_tag_idx = doc_html.index("<span style=")
-            before_tag_html = doc_html[:to_finish_tag_idx]
-            new_html = ''.join((before_tag_html, text, doc_html[to_finish_tag_idx:]))
+            before_tag_html, _, after_tag_html = doc_html.partition("<span style=")
+            new_html = ''.join((before_tag_html, text, after_tag_html))
             self.text_edit.setHtml(new_html)
         except ValueError as ve:
             logging.error(f"cannot locate the to-finish tag to insert transcribed text: {ve}")
