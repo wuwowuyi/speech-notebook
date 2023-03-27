@@ -31,6 +31,7 @@ def main():
                 config[key.strip().upper()] = value.strip()
 
     if os.environ.get('PYTHONASYNCIODEBUG', '0') == '1':
+        print('Running in debug mode.')
         logging.basicConfig(filename=LOG_FILE, level=logging.DEBUG)
         logging.debug("\n" + "*" * 100)  # to separate from previous log
 

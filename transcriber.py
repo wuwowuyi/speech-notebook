@@ -9,7 +9,9 @@ import logging
 import queue
 from datetime import datetime
 
+import numpy as np
 import pyaudio
+import whisper
 from PyQt6.QtCore import QObject, pyqtSignal
 
 # Audio recording parameters
@@ -18,8 +20,7 @@ RATE = 16000  # sampling rate, the number of frames per second
 CHUNK = 1024  # frames per buffer.
 CHUNK_DURATION = CHUNK / RATE  # the duration of a chunk
 
-# Google charges each request rounded up to the nearest increment of 15 seconds
-# We limit each request no more than but close to 15 seconds
+# whisper processes the audio with a sliding 30-second window
 MAX_LENGTH_PER_REQUEST = 30
 
 
@@ -138,14 +139,14 @@ class AudioTranscriber(QObject):
         text_queue: asyncio.Queue[str] = asyncio.Queue()  # transcribed text out buffer
 
         def _callback(text):  # for _transcriber thread to write back
-            self.loop.call_soon_threadsafe(text_queue.put_nowait,
-                                           copy.copy(text) if not text else None)
+            self.loop.call_soon_threadsafe(text_queue.put_nowait, text if text else None)
 
         self.loop = asyncio.get_running_loop()
         self.stream = MicrophoneStream(RATE, CHUNK, audio_buffer)
         with self.stream:
             audio_generator = asyncio.create_task(self.stream.collect())
-            transcriber = self.loop.run_in_executor(self._transcribe, audio_buffer, _callback)
+            transcriber = self.loop.run_in_executor(None, self._transcribe, audio_buffer, _callback)
+            #transcriber = asyncio.create_task(asyncio.to_thread(self._transcribe, audio_buffer, _callback))
             copier = asyncio.create_task(self._copier(text_queue))
 
             await asyncio.wait((
@@ -160,10 +161,26 @@ class AudioTranscriber(QObject):
 
     async def _copier(self, text_queue: asyncio.Queue[str]) -> None:
         while text := await text_queue.get():
-            logging.debug(f"write back {text}")
+            #logging.debug(f"write back {text}")
             self.progress.emit(text, False)
 
-    def _transcribe(self, audio_buff: queue.Queue[bytes], callback: Callable[[str], None]):
+    def _transcribe(self, audio_buff: queue.Queue[bytes], callback: Callable[[str], None]) -> None:
         """Call Google speech API to transcribe audio data into text. """
         logging.debug(f"\nTranscribe thread started at {datetime.now().strftime('%H:%M:%S')}")
-        # to finish
+        try:
+            model = whisper.load_model("small")
+            while True:
+                content = audio_buff.get(timeout=MAX_LENGTH_PER_REQUEST)  # wait for data. blocking
+                if content is None:
+                    break
+
+                audio = np.frombuffer(content, np.int16).flatten().astype(np.float32) / 32768.0
+                result = model.transcribe(audio, fp16=False, language='zh')
+
+                logging.debug(f"start printing responses at {datetime.now().strftime('%H:%M:%S.%f')}")
+                if result:
+                    logging.debug(f"{result['text']}")
+                    callback(result["text"])
+        finally:
+            logging.debug(f"stopping transcribing audio data")
+            callback(None)

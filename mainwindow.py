@@ -112,7 +112,7 @@ class MainWindow(QMainWindow):
         font = QFont()
         font.setPointSize(20)
         self.label.setFont(font)
-        self.timer = QTimer()
+        self.timer = QTimer()  # timer to update the label
         self.timer.timeout.connect(self._update_label)
 
         # set up the record button
