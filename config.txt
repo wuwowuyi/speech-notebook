@@ -1,6 +1,3 @@
-# file to save on exit. must be a .txt file
-WORKSPACE_FILE=recordings.txt
-
 # initial window size, in the format of width, height
 WINDOW_SIZE=800, 600
 

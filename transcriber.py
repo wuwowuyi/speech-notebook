@@ -113,8 +113,7 @@ class MicrophoneStream:
 
 class AudioTranscriber(QObject):
     finished = pyqtSignal()
-    progress = pyqtSignal(str, bool)
-    TO_FINISH_PLACE_HOLDER = "<span style='background-color: #ADD8E6;'>...</span>"
+    progress = pyqtSignal(str)
 
     def __init__(self, config: Dict[str, str]):
         super().__init__()
@@ -124,14 +123,9 @@ class AudioTranscriber(QObject):
         asyncio.run(self._run())
 
     def stop(self) -> None:
-        """Called from the main GUI thread
+        """Called from the main GUI thread when user release the recording button
         """
-
-        def cleanup():
-            self.progress.emit(self.TO_FINISH_PLACE_HOLDER, True)
-            self.stream.stop()
-
-        self.loop.call_soon_threadsafe(cleanup)
+        self.loop.call_soon_threadsafe(self.stream.stop)
 
     async def _run(self) -> None:
         """Core method. start recording and transcribing audio into text. """
@@ -146,7 +140,6 @@ class AudioTranscriber(QObject):
         with self.stream:
             audio_generator = asyncio.create_task(self.stream.collect())
             transcriber = self.loop.run_in_executor(None, self._transcribe, audio_buffer, _callback)
-            #transcriber = asyncio.create_task(asyncio.to_thread(self._transcribe, audio_buffer, _callback))
             copier = asyncio.create_task(self._copier(text_queue))
 
             await asyncio.wait((
@@ -161,8 +154,8 @@ class AudioTranscriber(QObject):
 
     async def _copier(self, text_queue: asyncio.Queue[str]) -> None:
         while text := await text_queue.get():
-            #logging.debug(f"write back {text}")
-            self.progress.emit(text, False)
+            logging.debug(f"write back {text[:40]}")
+            self.progress.emit(text)
 
     def _transcribe(self, audio_buff: queue.Queue[bytes], callback: Callable[[str], None]) -> None:
         """Call Google speech API to transcribe audio data into text. """
@@ -175,11 +168,11 @@ class AudioTranscriber(QObject):
                     break
 
                 audio = np.frombuffer(content, np.int16).flatten().astype(np.float32) / 32768.0
-                result = model.transcribe(audio, fp16=False, language='zh')
+                result = model.transcribe(audio, fp16=False, language=self.language_code)
 
                 logging.debug(f"start printing responses at {datetime.now().strftime('%H:%M:%S.%f')}")
                 if result:
-                    logging.debug(f"{result['text']}")
+                    logging.debug(f"{result['text'][:40]}")
                     callback(result["text"])
         finally:
             logging.debug(f"stopping transcribing audio data")
