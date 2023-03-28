@@ -89,6 +89,8 @@ class MainWindow(QMainWindow):
         self.increase_fz = QAction(QIcon("resources/increase-font-size.png"), "&-", self)
         self.decrease_fz.triggered.connect(self.decrease_font_size)
         self.increase_fz.triggered.connect(self.increase_font_size)
+        self.increase_fz.setShortcut(QKeySequence("Ctrl+="))
+        self.decrease_fz.setShortcut(QKeySequence("Ctrl+-"))
         toolbar.addAction(self.decrease_fz)
         toolbar.addAction(self.increase_fz)
 
