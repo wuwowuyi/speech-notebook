@@ -12,6 +12,9 @@ from PyQt6.QtWidgets import QMainWindow, QToolBar, QStatusBar, QVBoxLayout, QWid
 from transcriber import AudioTranscriber
 
 
+CONFIG_FILE = 'config.txt'  # configuration file
+
+
 class MainWindow(QMainWindow):
     MAX_FONT_SIZE = 30
     MIN_FONT_SIZE = 10
@@ -45,10 +48,10 @@ class MainWindow(QMainWindow):
             if font_size > self.MAX_FONT_SIZE or font_size < self.MIN_FONT_SIZE:
                 logging.warning(f"font size must be between {self.MIN_FONT_SIZE} and {self.MAX_FONT_SIZE}.")
                 font_size = 16  # revert to default
-            self.FONT_SIZE = font_size
+            self.font_size = font_size
         except ValueError as ve:
             logging.warning("Invalid font size", ve)
-            self.FONT_SIZE = 16
+            self.font_size = 16
 
         self.MESSAGES = {
             'modified': config.pop('MESSAGE.CONTENT_MODIFIED', 'content modified'),
@@ -132,20 +135,24 @@ class MainWindow(QMainWindow):
         self.record_btn.setFixedHeight(50)
 
         font = QFont()
-        font.setPointSize(self.FONT_SIZE)
+        font.setPointSize(self.font_size)
         self.text_edit.setFont(font)  # zoom throws warnings after setting font
 
     def decrease_font_size(self):
         font = self.text_edit.font()
-        if font.pointSize() - 2 >= self.MIN_FONT_SIZE:
-            font.setPointSize(font.pointSize() - 2)
+        intend_size = font.pointSize() - 2
+        if intend_size >= self.MIN_FONT_SIZE:
+            font.setPointSize(intend_size)
             self.text_edit.setFont(font)
+            self.font_size = intend_size
 
     def increase_font_size(self):
         font = self.text_edit.font()
-        if font.pointSize() + 2 <= self.MAX_FONT_SIZE:
-            font.setPointSize(font.pointSize() + 2)
+        intend_size = font.pointSize() + 2
+        if intend_size <= self.MAX_FONT_SIZE:
+            font.setPointSize(intend_size)
             self.text_edit.setFont(font)
+            self.font_size = intend_size
 
     def _write_back(self, text: str) -> None:
         """
@@ -209,6 +216,19 @@ class MainWindow(QMainWindow):
         """Handle window close event. """
         super().closeEvent(event)
         self.save_file()
+
+        saved = False
+        with open(CONFIG_FILE, 'r+') as f:  # save current font size
+            lines = f.readlines()
+            f.seek(0)
+            for line in lines:
+                if not line or not line.startswith('FONT_SIZE'):
+                    f.write(line)
+                else:
+                    f.write(f"FONT_SIZE={self.font_size}\n")
+                    saved = True
+            if not saved:
+                f.write(f"FONT_SIZE={self.font_size}")
 
     def open_file(self):
         """Open an existing text file and load its content into the editor. """
