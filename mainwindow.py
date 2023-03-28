@@ -13,6 +13,8 @@ from transcriber import AudioTranscriber
 
 
 class MainWindow(QMainWindow):
+    MAX_FONT_SIZE = 30
+    MIN_FONT_SIZE = 10
 
     def __init__(self, config: Dict[str, str]):
         super().__init__()
@@ -40,8 +42,9 @@ class MainWindow(QMainWindow):
         # init font size
         try:
             font_size = int(config.pop('FONT_SIZE', 16))
-            if font_size > 30 or font_size < 8:
-                raise ValueError("font size must be between 8 and 30.")
+            if font_size > self.MAX_FONT_SIZE or font_size < self.MIN_FONT_SIZE:
+                logging.warning(f"font size must be between {self.MIN_FONT_SIZE} and {self.MAX_FONT_SIZE}.")
+                font_size = 16  # revert to default
             self.FONT_SIZE = font_size
         except ValueError as ve:
             logging.warning("Invalid font size", ve)
@@ -66,11 +69,13 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
 
         # add buttons to toolbar
+        # open file button
         open_action = QAction(QIcon("resources/folder-horizontal-open.png"), "&Open", self)
         open_action.triggered.connect(self.open_file)
         open_action.setShortcut(QKeySequence("Ctrl+o"))
         toolbar.addAction(open_action)
 
+        # save button
         self.save_action = QAction(QIcon("resources/disk-black.png"), "&Save", self)
         self.save_action.triggered.connect(self.save_file)
         self.save_action.setShortcut(QKeySequence("Ctrl+s"))
@@ -78,6 +83,14 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.save_action)
         self.isopenfile = False  # a flag used for updating status
         self.filepath = ''  # path used last time a file was open or saved
+
+        # decrease and increase font size buttons
+        self.decrease_fz = QAction(QIcon("resources/decrease-font-size.png"), "&+", self)
+        self.increase_fz = QAction(QIcon("resources/increase-font-size.png"), "&-", self)
+        self.decrease_fz.triggered.connect(self.decrease_font_size)
+        self.increase_fz.triggered.connect(self.increase_font_size)
+        toolbar.addAction(self.decrease_fz)
+        toolbar.addAction(self.increase_fz)
 
         # status bar near bottom of window
         status_bar = QStatusBar(self)
@@ -119,6 +132,18 @@ class MainWindow(QMainWindow):
         font = QFont()
         font.setPointSize(self.FONT_SIZE)
         self.text_edit.setFont(font)  # zoom throws warnings after setting font
+
+    def decrease_font_size(self):
+        font = self.text_edit.font()
+        if font.pointSize() - 2 >= self.MIN_FONT_SIZE:
+            font.setPointSize(font.pointSize() - 2)
+            self.text_edit.setFont(font)
+
+    def increase_font_size(self):
+        font = self.text_edit.font()
+        if font.pointSize() + 2 <= self.MAX_FONT_SIZE:
+            font.setPointSize(font.pointSize() + 2)
+            self.text_edit.setFont(font)
 
     def _write_back(self, text: str) -> None:
         """
