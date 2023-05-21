@@ -158,7 +158,7 @@ class AudioTranscriber(QObject):
             self.progress.emit(text)
 
     def _transcribe(self, audio_buff: queue.Queue[bytes], callback: Callable[[str], None]) -> None:
-        """Call Google speech API to transcribe audio data into text. """
+        """Use OpenAI whisper to transcribe audio data into text. """
         logging.debug(f"\nTranscribe thread started at {datetime.now().strftime('%H:%M:%S')}")
         try:
             model = whisper.load_model("small")
