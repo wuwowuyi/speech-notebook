@@ -87,6 +87,12 @@ class MainWindow(QMainWindow):
         self.isopenfile = False  # a flag used for updating status
         self.filepath = ''  # path used last time a file was open or saved
 
+        # new file button
+        self.new_action = QAction(QIcon("resources/add.png"), "&New", self)
+        self.new_action.triggered.connect(self.new_file)
+        self.new_action.setShortcut(QKeySequence("Ctrl+n"))
+        toolbar.addAction(self.new_action)
+
         # decrease and increase font size buttons
         self.decrease_fz = QAction(QIcon("resources/decrease-font-size.png"), "&+", self)
         self.increase_fz = QAction(QIcon("resources/increase-font-size.png"), "&-", self)
@@ -257,6 +263,15 @@ class MainWindow(QMainWindow):
                 self.filepath = fname
                 self.statusBar().showMessage(self.MESSAGES['saved'])
                 self.save_action.setEnabled(False)
+
+    def new_file(self):
+        if self.save_action.isEnabled():  # content is not saved
+            self.save_file()
+
+        self.filepath = ''
+        self.text_edit.clear()
+        self.save_action.setEnabled(False)
+        self.statusBar().showMessage('')
 
     def set_status_msg(self):
         """Update save button status and the message in the status bar in bottom. """
