@@ -215,9 +215,10 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         """Handle window close event. """
         super().closeEvent(event)
-        self.save_file()
+        if self.save_action.isEnabled():  # content is not saved
+            self.save_file()
 
-        saved = False
+        saved = False  # font size config saved or not
         with open(CONFIG_FILE, 'r+') as f:  # save current font size
             lines = f.readlines()
             f.seek(0)
@@ -246,12 +247,16 @@ class MainWindow(QMainWindow):
 
     def save_file(self):
         """Save content in editor to file. """
-        if self.filepath:
-            with open(self.filepath, 'w+') as f:
-                f.write(self.text_edit.toPlainText())
-
-            self.statusBar().showMessage(self.MESSAGES['saved'])
-            self.save_action.setEnabled(False)
+        if self.filepath:  # save to the file which the content was loaded/saved.
+            fname = self.filepath
+        else:  # save into a new file
+            fname, _ = QFileDialog.getSaveFileName(self, 'Save File')
+        if fname:
+            with open(fname, 'w') as f:
+                f.write(self.text_edit.toPlainText() or '')
+                self.filepath = fname
+                self.statusBar().showMessage(self.MESSAGES['saved'])
+                self.save_action.setEnabled(False)
 
     def set_status_msg(self):
         """Update save button status and the message in the status bar in bottom. """
