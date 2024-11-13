@@ -14,6 +14,7 @@ Create a Python virtual environment, and inside the virtual environment, install
 ```shell
 pip install -r requirements.txt
 ```
+Config the language you use in `config.txt`.
 
 To run the program, `python ./voice_notebook.py`.
 
