@@ -2,6 +2,7 @@
 
 A small Python GUI application that use OpenAI's whisper to convert speech to text.
 
+![ui](voice_notebook_ui.png)
 
 ## Setup
 
