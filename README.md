@@ -11,6 +11,8 @@ As shown in the screenshot below, when the record button is pressed down and hel
 
 Once the record button is released, the transcriber thread is terminated.
 
+So basically the two queues, audio and transcribed text queue, connect 3 concurrent tasks to form a pipeline that continuously transribes audio from microphone to the main window.
+
 ![ui](voice_notebook_ui.png)
 
 
