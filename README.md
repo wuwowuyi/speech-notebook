@@ -1,8 +1,18 @@
 # Speech notebook
 
-A small Python GUI application that use OpenAI's whisper to convert speech to text.
+A lightweight Python GUI application that use [OpenAI's whisper](https://github.com/openai/whisper) to convert speech to text.
+
+The application UI builds on top of PyQt6. 
+
+As shown in the screenshot below, when the record button is pressed down and held, the main window starts a transcriber thread to run 3 tasks concurrently:
+* a Python asyncio task to collect audio stream from microphone and put into an audio data queue
+* an OpenAI whisper model is loaded in a dedicated thread which listens to the audio data queue, transcribes audio into text, and continuously puts transcribed text into a text data queue
+* a Python asyncio task listens to the text data queue and sends text back to the main window.
+
+Once the record button is released, the transcriber thread is terminated.
 
 ![ui](voice_notebook_ui.png)
+
 
 ## Setup
 
