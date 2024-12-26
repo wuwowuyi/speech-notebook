@@ -21,7 +21,7 @@ CHUNK = 1024  # frames per buffer.
 CHUNK_DURATION = CHUNK / RATE  # the duration of a chunk
 
 # whisper processes the audio with a sliding 30-second window
-MAX_LENGTH_PER_REQUEST = 30
+MAX_LENGTH_PER_REQUEST = 15
 
 
 class MicrophoneStream:
