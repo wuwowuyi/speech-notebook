@@ -4,6 +4,8 @@ A lightweight Python GUI application that use [OpenAI's whisper](https://github.
 
 The application UI builds on top of PyQt6. 
 
+<img src="resources/workflow.png" alt="workflow" width="600"/>
+
 As shown in the screenshot below, when the record button is pressed down and held, the main window starts a transcriber thread to run 3 tasks concurrently:
 * a Python asyncio task to collect audio stream from microphone and put into an audio data queue
 * an OpenAI whisper model is loaded in a dedicated thread which listens to the audio data queue, transcribes audio into text, and continuously puts transcribed text into a text data queue
